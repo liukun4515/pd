@@ -38,11 +38,6 @@ func (e JSONError) Error() string {
 	return e.err.Error()
 }
 
-// Cause for compatibility with the errors package
-func (e JSONError) Cause() error {
-	return e.err
-}
-
 func tagJSONError(err error) error {
 	switch err.(type) {
 	case *json.SyntaxError, *json.UnmarshalTypeError:
