@@ -30,6 +30,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// 也是主要实现 server的一些方法
 var (
 	errNoLeader = errors.New("no leader")
 )

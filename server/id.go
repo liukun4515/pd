@@ -33,6 +33,8 @@ type idAllocator struct {
 	s *Server
 }
 
+// 用于分配id信息
+// 分配的基于base和end
 func (alloc *idAllocator) Alloc() (uint64, error) {
 	alloc.mu.Lock()
 	defer alloc.mu.Unlock()

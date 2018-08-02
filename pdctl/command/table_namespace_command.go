@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// namespace的内容
 const (
 	namespacesPrefix     = "pd/api/v1/classifier/table/namespaces"
 	namespaceTablePrefix = "pd/api/v1/classifier/table/namespaces/table"

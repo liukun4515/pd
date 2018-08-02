@@ -26,6 +26,7 @@ import (
 const zeroDuration = time.Duration(0)
 
 // MetricConfig is the metric configuration.
+// 配置metrics信息推送的地方
 type MetricConfig struct {
 	PushJob      string            `toml:"job" json:"job"`
 	PushAddress  string            `toml:"address" json:"address"`
@@ -74,6 +75,7 @@ func prometheusPushClient(job, addr string, interval time.Duration) {
 }
 
 // Push metircs in background.
+// 启动 push metrics的服务
 func Push(cfg *MetricConfig) {
 	if cfg.PushInterval.Duration == zeroDuration || len(cfg.PushAddress) == 0 {
 		log.Info("disable Prometheus push client")

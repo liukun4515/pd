@@ -16,6 +16,8 @@ package pd
 import "github.com/prometheus/client_golang/prometheus"
 
 var (
+	// pd client的一些metrics信息
+	// 处理正确的时间
 	cmdDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: "pd_client",
@@ -24,7 +26,7 @@ var (
 			Help:      "Bucketed histogram of processing time (s) of handled success cmds.",
 			Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 13),
 		}, []string{"type"})
-
+	// 处理fail的时间
 	cmdFailedDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: "pd_client",

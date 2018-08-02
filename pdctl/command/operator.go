@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// operator？？？
 var (
 	operatorsPrefix = "pd/api/v1/operators"
 )

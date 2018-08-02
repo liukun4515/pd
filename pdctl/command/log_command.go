@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// 修改 pd的 log级别
 var (
 	logPrefix = "pd/api/v1/log"
 )

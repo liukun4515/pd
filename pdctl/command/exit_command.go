@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// 退出命令
 // NewExitCommand New a exit subcommand of the rootCmd
 func NewExitCommand() *cobra.Command {
 	conf := &cobra.Command{

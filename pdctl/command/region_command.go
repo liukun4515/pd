@@ -24,6 +24,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// 访问region的一些api
+
 var (
 	regionsPrefix          = "pd/api/v1/regions"
 	regionsCheckPrefix     = "pd/api/v1/regions/check"

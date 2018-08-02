@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// pd health相关内容
 var (
 	healthPrefix = "pd/health"
 )

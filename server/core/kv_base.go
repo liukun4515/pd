@@ -20,6 +20,7 @@ import (
 )
 
 // KVBase is an abstract interface for load/save pd cluster data.
+// 基本的kv操作，两种实现，mem和etcd
 type KVBase interface {
 	Load(key string) (string, error)
 	LoadRange(key, endKey string, limit int) ([]string, error)
@@ -29,6 +30,7 @@ type KVBase interface {
 
 type memoryKV struct {
 	sync.RWMutex
+	// 使用btree来实现
 	tree *btree.BTree
 }
 
@@ -43,6 +45,7 @@ type memoryKVItem struct {
 	key, value string
 }
 
+// item就是要实现比较函数
 func (s memoryKVItem) Less(than btree.Item) bool {
 	return s.key < than.(memoryKVItem).key
 }

@@ -25,6 +25,7 @@ type StringSlice []string
 
 // MarshalJSON returns the size as a JSON string.
 func (s StringSlice) MarshalJSON() ([]byte, error) {
+	// 按照string和sep对应的进行join
 	return []byte(strconv.Quote(strings.Join(s, ","))), nil
 }
 

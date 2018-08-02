@@ -58,7 +58,9 @@ func getRequest(cmd *cobra.Command, prefix string, method string, bodyType strin
 	if method == "" {
 		method = http.MethodGet
 	}
+	// 获得请求的url
 	url := getAddressFromCmd(cmd, prefix)
+	// 根据信息构造出来对应的request信息
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
@@ -67,6 +69,7 @@ func getRequest(cmd *cobra.Command, prefix string, method string, bodyType strin
 	return req, err
 }
 
+// 发送对应的请求，并返回结果
 func dail(req *http.Request) (string, error) {
 	var res string
 	reps, err := dialClient.Do(req)
@@ -82,10 +85,13 @@ func dail(req *http.Request) (string, error) {
 	if err != nil {
 		return res, err
 	}
+	// 解析http返回来的结果内容
 	res = string(r)
 	return res, nil
 }
 
+// 处理所有pd相关的http 请求相关内容
+// pd会启动多个服务：1. client调用的grpc服务  2. peer之间进行数据同步  3. ctl进行一个访问
 func doRequest(cmd *cobra.Command, prefix string, method string) (string, error) {
 	req, err := getRequest(cmd, prefix, method, "", nil)
 	if err != nil {
@@ -99,6 +105,8 @@ func genResponseError(r *http.Response) error {
 	return errors.Errorf("[%d] %s", r.StatusCode, res)
 }
 
+// 获取pd的地址，并且对prefix进行一个拼接操作
+// pd的地址在上一个cmd的操作中
 func getAddressFromCmd(cmd *cobra.Command, prefix string) string {
 	p, err := cmd.Flags().GetString("pd")
 	if err != nil {

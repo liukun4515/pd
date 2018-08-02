@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// 实现的具体内容
 const (
 	physicalShiftBits = 18
 	logicalBits       = 0x3FFFF

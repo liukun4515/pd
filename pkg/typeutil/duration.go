@@ -21,6 +21,7 @@ import (
 	"github.com/juju/errors"
 )
 
+// duration的转换方法和函数
 // Duration is a wrapper of time.Duration for TOML and JSON.
 type Duration struct {
 	time.Duration

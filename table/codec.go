@@ -20,6 +20,7 @@ import (
 	"github.com/juju/errors"
 )
 
+// 文件信息的编解码内容
 var (
 	tablePrefix = []byte{'t'}
 	metaPrefix  = []byte{'m'}
@@ -43,9 +44,12 @@ func (k Key) TableID() int64 {
 		// should never happen
 		return 0
 	}
+	// 判断其前缀
 	if !bytes.HasPrefix(key, tablePrefix) {
 		return 0
 	}
+	// 后边是tableid
+	//tTABLEID
 	key = key[len(tablePrefix):]
 
 	_, tableID, _ := DecodeInt(key)

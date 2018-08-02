@@ -53,6 +53,9 @@ func tagJSONError(err error) error {
 
 // ReadJSON reads a JSON data from r and then closes it.
 // An error due to invalid json will be returned as a JSONError
+
+// 如果error有效，那么就返回对应的json error信息
+// 其实就是从io中读取json信息
 func ReadJSON(r io.ReadCloser, data interface{}) error {
 	var err error
 	defer DeferClose(r, &err)

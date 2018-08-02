@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// 增加一些scheduler命令
 var (
 	schedulersPrefix = "pd/api/v1/schedulers"
 )

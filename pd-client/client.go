@@ -57,9 +57,12 @@ type Client interface {
 	Close()
 }
 
+// 定义的ts request的返回信息？
 type tsoRequest struct {
 	start    time.Time
+	// 是由于parent传递过来的可以进行关闭处理
 	ctx      context.Context
+	// done表示tso request的请求结束
 	done     chan error
 	physical int64
 	logical  int64
@@ -86,12 +89,15 @@ type client struct {
 	clusterID   uint64
 	tsoRequests chan *tsoRequest
 
+	// client是针对于多个pd的grpc链接
+	// leader信息
+	// 这里存储的是一个公共的锁，当需要获得某个grpc链接，或者需要改变leader的时候就需要进行修改
 	connMu struct {
 		sync.RWMutex
 		clientConns map[string]*grpc.ClientConn
 		leader      string
 	}
-
+	// 事件
 	tsDeadlineCh  chan deadline
 	checkLeaderCh chan struct{}
 
@@ -116,6 +122,7 @@ func NewClient(pdAddrs []string, security SecurityOption) (Client, error) {
 	c := &client{
 		urls:          addrsToUrls(pdAddrs),
 		tsoRequests:   make(chan *tsoRequest, maxMergeTSORequests),
+		// 这里仅仅是初始化一个ddl ch的信息
 		tsDeadlineCh:  make(chan deadline, 1),
 		checkLeaderCh: make(chan struct{}, 1),
 		ctx:           ctx,
@@ -123,23 +130,30 @@ func NewClient(pdAddrs []string, security SecurityOption) (Client, error) {
 		security:      security,
 	}
 	c.connMu.clientConns = make(map[string]*grpc.ClientConn)
-
+	// 获得pd client的初始化集群信息
 	if err := c.initClusterID(); err != nil {
 		return nil, errors.Trace(err)
 	}
+	// 获得集群以后就更新leader
 	if err := c.updateLeader(); err != nil {
 		return nil, errors.Trace(err)
 	}
 	log.Infof("[pd] init cluster id %v", c.clusterID)
 
 	c.wg.Add(3)
+	// pd作为一个client需要不停的进行grpc通信和pd的server的节点进行交流
+	// 其中有三个循环一直在使用
+
+	// 循环的去操作client应该维护的内容
 	go c.tsLoop()
 	go c.tsCancelLoop()
+	// client需要默认的去维护leader，所有需要每隔一段时间向集群获取一个leader信息
 	go c.leaderLoop()
 
 	return c, nil
 }
 
+// 所有的member中不会有大量重复的url吗？
 func (c *client) updateURLs(members []*pdpb.Member) {
 	urls := make([]string, 0, len(members))
 	for _, m := range members {
@@ -148,6 +162,7 @@ func (c *client) updateURLs(members []*pdpb.Member) {
 	c.urls = urls
 }
 
+// client尝试去获得pd集群的id
 func (c *client) initClusterID() error {
 	ctx, cancel := context.WithCancel(c.ctx)
 	defer cancel()
@@ -168,11 +183,15 @@ func (c *client) initClusterID() error {
 	return errors.Trace(errFailInitClusterID)
 }
 
+// 更新leader的过程
 func (c *client) updateLeader() error {
 	for _, u := range c.urls {
 		ctx, cancel := context.WithTimeout(c.ctx, updateLeaderTimeout)
+		// 向某个url发送获得member的信息
 		members, err := c.getMembers(ctx, u)
+		// 返回就cancel不等timeout
 		cancel()
+		// 如果出现的问题是对应的节点没有leader信息或者等等不符合条件，那么就查看是否整个pd client被关闭了
 		if err != nil || members.GetLeader() == nil || len(members.GetLeader().GetClientUrls()) == 0 {
 			select {
 			case <-c.ctx.Done():
@@ -181,7 +200,9 @@ func (c *client) updateLeader() error {
 				continue
 			}
 		}
+		// 为什么要去使用 所有member 来更新url信息呢？
 		c.updateURLs(members.GetMembers())
+		// 使用leader的第一个  client url
 		if err = c.switchLeader(members.GetLeader().GetClientUrls()); err != nil {
 			return errors.Trace(err)
 		}
@@ -190,6 +211,7 @@ func (c *client) updateLeader() error {
 	return errors.Errorf("failed to get leader from %v", c.urls)
 }
 
+// 向某个url发送grpc请求获取对应的member信息
 func (c *client) getMembers(ctx context.Context, url string) (*pdpb.GetMembersResponse, error) {
 	cc, err := c.getOrCreateGRPCConn(url)
 	if err != nil {
@@ -202,8 +224,10 @@ func (c *client) getMembers(ctx context.Context, url string) (*pdpb.GetMembersRe
 	return members, nil
 }
 
+// try to switch the new leader, if the pd leader changed.
 func (c *client) switchLeader(addrs []string) error {
 	// FIXME: How to safely compare leader urls? For now, only allows one client url.
+	// leader 的对应的member中第一个就是 最终的leader
 	addr := addrs[0]
 
 	c.connMu.RLock()
@@ -215,10 +239,11 @@ func (c *client) switchLeader(addrs []string) error {
 	}
 
 	log.Infof("[pd] leader switches to: %v, previous: %v", addr, oldLeader)
+	// 更新grpc的通信内容
 	if _, err := c.getOrCreateGRPCConn(addr); err != nil {
 		return errors.Trace(err)
 	}
-
+	// 切换新的leader
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 	c.connMu.leader = addr
@@ -275,6 +300,7 @@ func (c *client) getOrCreateGRPCConn(addr string) (*grpc.ClientConn, error) {
 	}
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
+	// 如果原来的存在，那么就关闭新的返回就得内容即可
 	if old, ok := c.connMu.clientConns[addr]; ok {
 		cc.Close()
 		return old, nil
@@ -284,6 +310,7 @@ func (c *client) getOrCreateGRPCConn(addr string) (*grpc.ClientConn, error) {
 	return cc, nil
 }
 
+// client定期的去维护 pd的leader节点
 func (c *client) leaderLoop() {
 	defer c.wg.Done()
 
@@ -292,8 +319,11 @@ func (c *client) leaderLoop() {
 
 	for {
 		select {
+		// 主动调用触发
 		case <-c.checkLeaderCh:
+		// 定时触发
 		case <-time.After(time.Minute):
+		// 被close掉
 		case <-ctx.Done():
 			return
 		}
@@ -310,6 +340,7 @@ type deadline struct {
 	cancel context.CancelFunc
 }
 
+// 另一个循环就是关闭cancel的内容
 func (c *client) tsCancelLoop() {
 	defer c.wg.Done()
 
@@ -318,21 +349,29 @@ func (c *client) tsCancelLoop() {
 
 	for {
 		select {
+		// 如果有向ddlch的信息
 		case d := <-c.tsDeadlineCh:
+			// 看这个ddl ch中其他信息是否满足
+			// 是接受到一个ddl请求以后
+			// 判断是超时了，还是done或者ctx done了
 			select {
+			// tso request 被取消
 			case <-d.timer:
 				log.Error("tso request is canceled due to timeout")
+				// 如果请求超时了就取消这个内容
 				d.cancel()
 			case <-d.done:
 			case <-ctx.Done():
 				return
 			}
+		//	已经被关闭
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
+// 一个client去定时的向pd server，请求ts
 func (c *client) tsLoop() {
 	defer c.wg.Done()
 
@@ -346,31 +385,42 @@ func (c *client) tsLoop() {
 
 	for {
 		var err error
-
+		// 如果刚开始stream的为null就初始化一个
 		if stream == nil {
 			var ctx context.Context
 			ctx, cancel = context.WithCancel(loopCtx)
+			// 获得一个对应的stream操作
 			stream, err = c.leaderClient().Tso(ctx)
+			// 如果有err
 			if err != nil {
 				select {
+				// 检查是否loop循环已经结束了
 				case <-loopCtx.Done():
 					return
 				default:
 				}
 				log.Errorf("[pd] create tso stream error: %v", err)
+				// 更新leader
 				c.ScheduleCheckLeader()
+				// cancel这轮循环的的ctx
 				cancel()
+				// 撤销tso request
 				c.revokeTSORequest(err)
 				select {
+				// 等待1s
 				case <-time.After(time.Second):
+				//	loop结束接return
 				case <-loopCtx.Done():
 					return
 				}
 				continue
 			}
 		}
-
+		// 获得stream以后
 		select {
+		// tsoRequests是一个比较大的channel
+		// 如果有第一个请求
+		// 那么争取处理一批请求
 		case first := <-c.tsoRequests:
 			requests = append(requests, first)
 			pending := len(c.tsoRequests)
@@ -389,7 +439,11 @@ func (c *client) tsLoop() {
 				return
 			}
 			opts = extractSpanReference(requests, opts[:0])
+			// 处理tso的请求，每次处理完一个请求就是finish对应的request对象
+			// 这样请求的线程就可以知道request已经处理结束
 			err = c.processTSORequests(stream, requests, opts)
+			// 处理请求
+			// 处理完请求以后tsloop就可以结束了
 			close(done)
 			requests = requests[:0]
 		case <-loopCtx.Done():
@@ -420,6 +474,8 @@ func extractSpanReference(requests []*tsoRequest, opts []opentracing.StartSpanOp
 	return opts
 }
 
+// 真正的发送tso 的请求
+// 使用tso client去发送请求，获得请求
 func (c *client) processTSORequests(stream pdpb.PD_TsoClient, requests []*tsoRequest, opts []opentracing.StartSpanOption) error {
 	if len(opts) > 0 {
 		span := opentracing.StartSpan("pdclient.processTSORequests", opts...)
@@ -457,16 +513,19 @@ func (c *client) processTSORequests(stream pdpb.PD_TsoClient, requests []*tsoReq
 	return nil
 }
 
+// 把对应的时间赋值给request
 func (c *client) finishTSORequest(requests []*tsoRequest, physical, firstLogical int64, err error) {
 	for i := 0; i < len(requests); i++ {
 		if span := opentracing.SpanFromContext(requests[i].ctx); span != nil {
 			span.Finish()
 		}
 		requests[i].physical, requests[i].logical = physical, firstLogical+int64(i)
+		// 告知对应的request已经处理完成了
 		requests[i].done <- err
 	}
 }
 
+// 解决tso request
 func (c *client) revokeTSORequest(err error) {
 	n := len(c.tsoRequests)
 	for i := 0; i < n; i++ {
@@ -478,11 +537,12 @@ func (c *client) revokeTSORequest(err error) {
 func (c *client) Close() {
 	c.cancel()
 	c.wg.Wait()
-
+	// 如果pd client关闭，就需要解决对应的tso request
 	c.revokeTSORequest(errClosing)
 
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
+	// 关闭所有的链接
 	for _, cc := range c.connMu.clientConns {
 		if err := cc.Close(); err != nil {
 			log.Errorf("[pd] failed close grpc clientConn: %v", err)
@@ -497,6 +557,7 @@ func (c *client) leaderClient() pdpb.PDClient {
 	return pdpb.NewPDClient(c.connMu.clientConns[c.connMu.leader])
 }
 
+// 主动调用check leader
 func (c *client) ScheduleCheckLeader() {
 	select {
 	case c.checkLeaderCh <- struct{}{}:
@@ -529,43 +590,57 @@ var tsoReqPool = sync.Pool{
 }
 
 func (c *client) GetTSAsync(ctx context.Context) TSFuture {
+	// 异步请求TS
 	if span := opentracing.SpanFromContext(ctx); span != nil {
 		span = opentracing.StartSpan("GetTSAsync", opentracing.ChildOf(span.Context()))
 		ctx = opentracing.ContextWithSpan(ctx, span)
 	}
+	// 可能多个线程去调用一个pd client，然后pd client可以同时获取tso request
 	req := tsoReqPool.Get().(*tsoRequest)
 	req.start = time.Now()
 	req.ctx = ctx
 	req.physical = 0
 	req.logical = 0
+	// 返回req，然后调用req的方法等待req结束
+	// 把req交给一个其他的专门请求的线程进行处理
+	// 其处理完或者处理中出现了错误，就把req的对应的状态进行修改，这样req也同样能够感知到事件的发生
 	c.tsoRequests <- req
-
+	// 虽然生产了对应请求，但是还是没有rpc通信
 	return req
 }
 
 // TSFuture is a future which promises to return a TSO.
 type TSFuture interface {
 	// Wait gets the physical and logical time, it would block caller if data is not available yet.
+	// 会发生block，如果数据没有获取的话
 	Wait() (int64, int64, error)
 }
 
 func (req *tsoRequest) Wait() (int64, int64, error) {
 	select {
+	// 如果req已经处理结束
+	// 1.一种可能是done结束
+	// 2.一种可能是ctx done
 	case err := <-req.done:
 		defer tsoReqPool.Put(req)
+		// 如果error不等于null就出问题了
 		if err != nil {
 			cmdFailedDuration.WithLabelValues("tso").Observe(time.Since(req.start).Seconds())
 			return 0, 0, errors.Trace(err)
 		}
+		// 如果error等于null说明获得了最终的结果
 		physical, logical := req.physical, req.logical
+		// 如果没有问题，就统计获得一次tso的时间
 		cmdDuration.WithLabelValues("tso").Observe(time.Since(req.start).Seconds())
 		return physical, logical, err
+	//	如果req的ctx结束了
 	case <-req.ctx.Done():
 		return 0, 0, errors.Trace(req.ctx.Err())
 	}
 }
 
 func (c *client) GetTS(ctx context.Context) (int64, int64, error) {
+	// 同步请求ts，让后进行wait即可
 	resp := c.GetTSAsync(ctx)
 	return resp.Wait()
 }

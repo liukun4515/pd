@@ -21,6 +21,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ping pd的时间消耗
+
 // NewPingCommand return a ping subcommand of rootCmd
 func NewPingCommand() *cobra.Command {
 	m := &cobra.Command{
@@ -39,5 +41,6 @@ func showPingCommandFunc(cmd *cobra.Command, args []string) {
 		return
 	}
 	elapsed := time.Since(start)
+	// 打印pd的时间间隔
 	fmt.Println("time:", elapsed)
 }

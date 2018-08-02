@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// pd的控制相关内容
 var (
 	configPrefix        = "pd/api/v1/config"
 	schedulePrefix      = "pd/api/v1/config/schedule"

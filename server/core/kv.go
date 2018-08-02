@@ -42,6 +42,9 @@ type KV struct {
 }
 
 // NewKV creates KV instance with KVBase.
+// kv只是对外提供服务的抽象
+// 底层的kv base才是真正对数据操作的
+// 这样的做法可以把两个内容进行分离
 func NewKV(base KVBase) *KV {
 	return &KV{
 		KVBase: base,

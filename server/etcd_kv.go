@@ -38,6 +38,7 @@ type etcdKVBase struct {
 	rootPath string
 }
 
+// 根据pd server构建对应的 etcd kv
 func newEtcdKVBase(s *Server) *etcdKVBase {
 	return &etcdKVBase{
 		server:   s,

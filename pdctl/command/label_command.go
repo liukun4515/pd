@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// label是做什么的
 var (
 	labelsPrefix      = "pd/api/v1/labels"
 	labelsStorePrefix = "pd/api/v1/labels/stores"

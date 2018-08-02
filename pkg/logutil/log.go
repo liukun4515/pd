@@ -37,6 +37,7 @@ const (
 )
 
 // FileLogConfig serializes file log related config in toml/json.
+// log日志文件的配置
 type FileLogConfig struct {
 	// Log filename, leave empty to disable file log.
 	Filename string `toml:"filename" json:"filename"`
@@ -126,6 +127,7 @@ func (hook *contextHook) Levels() []log.Level {
 }
 
 // StringToLogLevel translates log level string to log level.
+// 名字获得对应的log level
 func StringToLogLevel(level string) log.Level {
 	switch strings.ToLower(level) {
 	case "fatal":

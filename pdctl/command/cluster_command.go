@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// 获得集群id相关信息
 const clusterPrefix = "pd/api/v1/cluster"
 
 // NewClusterCommand return a cluster subcommand of rootCmd

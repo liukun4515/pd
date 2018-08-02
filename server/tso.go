@@ -30,7 +30,7 @@ const (
 	updateTimestampGuard = time.Millisecond
 	maxLogical           = int64(1 << 18)
 )
-
+// 实现tso服务的内容
 var (
 	zeroTime = time.Time{}
 )

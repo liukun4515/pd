@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// 显示热点读写的region
 const (
 	hotReadRegionsPrefix  = "pd/api/v1/hotspot/regions/read"
 	hotWriteRegionsPrefix = "pd/api/v1/hotspot/regions/write"

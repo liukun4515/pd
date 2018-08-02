@@ -65,14 +65,16 @@ func main() {
 	}
 
 	// TODO: Make it configurable if it has big impact on performance.
+	// 这个是干什么的？？
 	grpc_prometheus.EnableHandlingTimeHistogram()
-
+	// 普罗米修斯数据采集
 	metricutil.Push(&cfg.Metric)
 
 	err = server.PrepareJoinCluster(cfg)
 	if err != nil {
 		log.Fatal("join error ", errors.ErrorStack(err))
 	}
+	// server 创建的逻辑
 	svr, err := server.CreateServer(cfg, api.NewHandler)
 	if err != nil {
 		log.Fatalf("create server failed: %v", errors.ErrorStack(err))
@@ -95,11 +97,12 @@ func main() {
 		sig = <-sc
 		cancel()
 	}()
-
+	// 启动server
+	// 主要的server的逻辑
 	if err := svr.Run(ctx); err != nil {
 		log.Fatalf("run server failed: %v", errors.ErrorStack(err))
 	}
-
+	// ctx被取消了
 	<-ctx.Done()
 	log.Infof("Got signal [%d] to exit.", sig)
 

@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 )
+// 实现的全部都是 server的方法，或者说server是pdserver的实现
 
 // notLeaderError is returned when current server is not the leader and not possible to process request.
 // TODO: work as proxy.
@@ -277,6 +278,7 @@ var errSendRegionHeartbeatTimeout = errors.New("send region heartbeat timeout")
 
 // heartbeatServer wraps PD_RegionHeartbeatServer to ensure when any error
 // occurs on Send() or Recv(), both endpoints will be closed.
+// 定义一个stream的 heart beast服务
 type heartbeatServer struct {
 	stream pdpb.PD_RegionHeartbeatServer
 	closed int32

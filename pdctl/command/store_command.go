@@ -22,6 +22,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+
+// 访问节点的一些api信息
 var (
 	storesPrefix = "pd/api/v1/stores"
 	storePrefix  = "pd/api/v1/store/%s"
