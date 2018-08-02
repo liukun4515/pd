@@ -47,6 +47,7 @@ type Client interface {
 	// Also it may return nil if PD finds no Region for the key temporarily,
 	// client should retry later.
 	GetRegion(ctx context.Context, key []byte) (*metapb.Region, *metapb.Peer, error)
+	GetPrevRegion(ctx context.Context, key []byte) (*metapb.Region, *metapb.Peer, error)
 	// GetRegionByID gets a region and its leader Peer from PD by id.
 	GetRegionByID(ctx context.Context, regionID uint64) (*metapb.Region, *metapb.Peer, error)
 	// GetStore gets a store from PD by store id.
@@ -596,6 +597,9 @@ func (c *client) GetRegion(ctx context.Context, key []byte) (*metapb.Region, *me
 		return nil, nil, errors.Trace(err)
 	}
 	return resp.GetRegion(), resp.GetLeader(), nil
+}
+func (c *client) GetPrevRegion(ctx context.Context, key []byte) (*metapb.Region, *metapb.Peer, error) {
+
 }
 
 func (c *client) GetRegionByID(ctx context.Context, regionID uint64) (*metapb.Region, *metapb.Peer, error) {
