@@ -22,6 +22,9 @@ import (
 
 // 文件信息的编解码内容
 var (
+	// 可以用于判断对应的key是什么类型的key
+	// 如果是meta的key就使用m编码
+	// 如果是table的key就使用t编码
 	tablePrefix = []byte{'t'}
 	metaPrefix  = []byte{'m'}
 )

@@ -578,6 +578,7 @@ func (s *Server) GetClusterStatus() (*ClusterStatus, error) {
 	return s.cluster.loadClusterStatus()
 }
 
+// 这是一个服务的key
 func (s *Server) getAllocIDPath() string {
 	return path.Join(s.rootPath, "alloc_id")
 }

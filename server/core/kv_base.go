@@ -50,9 +50,11 @@ func (s memoryKVItem) Less(than btree.Item) bool {
 	return s.key < than.(memoryKVItem).key
 }
 
+// 没有内容的时候是""
 func (kv *memoryKV) Load(key string) (string, error) {
 	kv.RLock()
 	defer kv.RUnlock()
+	// btree中获取某个key
 	item := kv.tree.Get(memoryKVItem{key, ""})
 	if item == nil {
 		return "", nil
@@ -64,6 +66,9 @@ func (kv *memoryKV) LoadRange(key, endKey string, limit int) ([]string, error) {
 	kv.RLock()
 	defer kv.RUnlock()
 	res := make([]string, 0, limit)
+	// 增序查找一个range
+	// 每次追加到res中，如果返回的是false就继续操作
+	// 直到返回true的时候才停止
 	kv.tree.AscendRange(memoryKVItem{key, ""}, memoryKVItem{endKey, ""}, func(item btree.Item) bool {
 		res = append(res, item.(memoryKVItem).value)
 		return len(res) < int(limit)
@@ -74,6 +79,7 @@ func (kv *memoryKV) LoadRange(key, endKey string, limit int) ([]string, error) {
 func (kv *memoryKV) Save(key, value string) error {
 	kv.Lock()
 	defer kv.Unlock()
+	// 内存插入一个节点的信息
 	kv.tree.ReplaceOrInsert(memoryKVItem{key, value})
 	return nil
 }
@@ -81,7 +87,7 @@ func (kv *memoryKV) Save(key, value string) error {
 func (kv *memoryKV) Delete(key string) error {
 	kv.Lock()
 	defer kv.Unlock()
-
+	// 内存中delete一个节点的信息
 	kv.tree.Delete(memoryKVItem{key, ""})
 	return nil
 }

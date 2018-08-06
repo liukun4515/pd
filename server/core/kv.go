@@ -51,23 +51,31 @@ func NewKV(base KVBase) *KV {
 	}
 }
 
+// store元信息对应的编码key
+// clusterPath+s+id
 func (kv *KV) storePath(storeID uint64) string {
 	return path.Join(clusterPath, "s", fmt.Sprintf("%020d", storeID))
 }
 
+// region元信息对应的编码key
+// clusterPath+r+id
 func (kv *KV) regionPath(regionID uint64) string {
 	return path.Join(clusterPath, "r", fmt.Sprintf("%020d", regionID))
 }
 
 // ClusterStatePath returns the path to save an option.
+// status信息
+// clusterPath+status+option
 func (kv *KV) ClusterStatePath(option string) string {
 	return path.Join(clusterPath, "status", option)
 }
 
+// ？？？什么意思
 func (kv *KV) storeLeaderWeightPath(storeID uint64) string {
 	return path.Join(schedulePath, "store_weight", fmt.Sprintf("%020d", storeID), "leader")
 }
 
+// ？？？什么意思
 func (kv *KV) storeRegionWeightPath(storeID uint64) string {
 	return path.Join(schedulePath, "store_weight", fmt.Sprintf("%020d", storeID), "region")
 }
@@ -133,8 +141,10 @@ func (kv *KV) LoadConfig(cfg interface{}) (bool, error) {
 }
 
 // LoadStores loads all stores from KV to StoresInfo.
+// load 所有的store信息
 func (kv *KV) LoadStores(stores *StoresInfo) error {
 	nextID := uint64(0)
+	// end key是64的最大值
 	endKey := kv.storePath(math.MaxUint64)
 	for {
 		key := kv.storePath(nextID)
@@ -237,6 +247,7 @@ func (kv *KV) LoadRegions(regions *RegionsInfo) error {
 	}
 }
 
+// 从真正实现kv的结构体中load数据，数据的结果存在msg中
 func (kv *KV) loadProto(key string, msg proto.Message) (bool, error) {
 	value, err := kv.Load(key)
 	if err != nil {
@@ -248,6 +259,7 @@ func (kv *KV) loadProto(key string, msg proto.Message) (bool, error) {
 	return true, proto.Unmarshal([]byte(value), msg)
 }
 
+// 从真正实现kv的结构总save数据，数据的内容存在在msg中
 func (kv *KV) saveProto(key string, msg proto.Message) error {
 	value, err := proto.Marshal(msg)
 	if err != nil {

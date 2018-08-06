@@ -33,7 +33,10 @@ var (
 )
 
 type etcdKVBase struct {
+	// 通过server来实现kv的服务
+	// 通过etcd的commit信息
 	server   *Server
+	// client没有什么作用
 	client   *clientv3.Client
 	rootPath string
 }
@@ -50,6 +53,7 @@ func newEtcdKVBase(s *Server) *etcdKVBase {
 func (kv *etcdKVBase) Load(key string) (string, error) {
 	key = path.Join(kv.rootPath, key)
 
+	// 从etcd中获取key对应的数据
 	resp, err := kvGet(kv.server.client, key)
 	if err != nil {
 		return "", errors.Trace(err)

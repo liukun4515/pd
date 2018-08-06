@@ -32,6 +32,11 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// 因为pd是一个分布式的服务，直接使用grpc对应的client的内容是非常不友好的，因为使用grpc的用户需要搞定leader
+// 通信等等信息，通过这样才可以获得一个稳定的服务
+// 所有pd需要做一个对上次透明的client的内容来实现服务。
+// client就是做这个功能的
+
 // Client is a PD (Placement Driver) client.
 // It should not be used after calling Close().
 type Client interface {
