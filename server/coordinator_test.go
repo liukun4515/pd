@@ -38,6 +38,7 @@ func newTestScheduleConfig() (*ScheduleConfig, *scheduleOption) {
 	cfg := NewConfig()
 	cfg.adjust(nil)
 	opt := newScheduleOption(cfg)
+	opt.SetClusterVersion(MinSupportedVersion(Version2_0))
 	return &cfg.Schedule, opt
 }
 
@@ -83,7 +84,7 @@ func (c *testClusterInfo) addLeaderRegion(regionID uint64, leaderID uint64, foll
 	}
 	regionInfo := core.NewRegionInfo(region, leader)
 	regionInfo.ApproximateSize = 10
-	regionInfo.ApproximateRows = 10
+	regionInfo.ApproximateKeys = 10
 	c.putRegion(regionInfo)
 }
 

@@ -35,7 +35,7 @@ type Region struct {
 	Peers  []*metapb.Peer
 	Leader *metapb.Peer
 	Size   int64
-	Rows   int64
+	Keys   int64
 }
 
 // CheckerFunc checks if the scheduler is finished.
@@ -47,7 +47,7 @@ type Conf struct {
 	Regions         []Region
 	MaxID           uint64
 	RegionSplitSize int64
-	RegionSplitRows int64
+	RegionSplitKeys int64
 	Events          []EventInner
 
 	Checker CheckerFunc // To check the schedule is finished.
@@ -72,29 +72,31 @@ func (a *idAllocator) setMaxID(id uint64) {
 	a.maxID = id
 }
 
-var confMap = map[string]func() *Conf{
+// ConfMap is a mapping of the cases to the their corresponding initialize functions.
+var ConfMap = map[string]func() *Conf{
 	"balance-leader": newBalanceLeader,
 	"add-nodes":      newAddNodes,
 	"region-split":   newRegionSplit,
+	"region-merge":   newRegionMerge,
 	"hot-read":       newHotRead,
 	"hot-write":      newHotWrite,
 }
 
 // NewConf creates a config to initialize simulator cluster.
 func NewConf(name string) *Conf {
-	if f, ok := confMap[name]; ok {
+	if f, ok := ConfMap[name]; ok {
 		return f()
 	}
 	return nil
 }
 
 // NeedSplit checks whether the region need to split according it's size
-// and rows.
+// and number of keys.
 func (c *Conf) NeedSplit(size, rows int64) bool {
 	if c.RegionSplitSize != 0 && size >= c.RegionSplitSize {
 		return true
 	}
-	if c.RegionSplitRows != 0 && rows >= c.RegionSplitRows {
+	if c.RegionSplitKeys != 0 && rows >= c.RegionSplitKeys {
 		return true
 	}
 	return false

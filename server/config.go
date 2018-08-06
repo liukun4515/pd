@@ -26,6 +26,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/coreos/etcd/embed"
 	"github.com/coreos/etcd/pkg/transport"
+	"github.com/coreos/go-semver/semver"
 	"github.com/juju/errors"
 	"github.com/pingcap/pd/pkg/logutil"
 	"github.com/pingcap/pd/pkg/metricutil"
@@ -76,6 +77,8 @@ type Config struct {
 	Replication ReplicationConfig `toml:"replication" json:"replication"`
 
 	Namespace map[string]NamespaceConfig `json:"namespace"`
+
+	ClusterVersion semver.Version `json:"cluster-version"`
 
 	// QuotaBackendBytes Raise alarms when backend size exceeds the given quota. 0 means use the default quota.
 	// the default size is 2GB, the maximum is 8GB.
@@ -335,7 +338,9 @@ func (c *Config) adjust(meta *toml.MetaData) error {
 	if err := c.Schedule.adjust(); err != nil {
 		return errors.Trace(err)
 	}
-	c.Replication.adjust()
+	if err := c.Replication.adjust(); err != nil {
+		return errors.Trace(err)
+	}
 
 	adjustDuration(&c.heartbeatStreamBindInterval, defaultHeartbeatStreamRebindInterval)
 
@@ -375,10 +380,10 @@ type ScheduleConfig struct {
 	MaxSnapshotCount    uint64 `toml:"max-snapshot-count,omitempty" json:"max-snapshot-count"`
 	MaxPendingPeerCount uint64 `toml:"max-pending-peer-count,omitempty" json:"max-pending-peer-count"`
 	// If both the size of region is smaller than MaxMergeRegionSize
-	// and the number of rows in region is smaller than MaxMergeRegionRows,
+	// and the number of rows in region is smaller than MaxMergeRegionKeys,
 	// it will try to merge with adjacent regions.
 	MaxMergeRegionSize uint64 `toml:"max-merge-region-size,omitempty" json:"max-merge-region-size"`
-	MaxMergeRegionRows uint64 `toml:"max-merge-region-rows,omitempty" json:"max-merge-region-rows"`
+	MaxMergeRegionKeys uint64 `toml:"max-merge-region-keys,omitempty" json:"max-merge-region-keys"`
 	// SplitMergeInterval is the minimum interval time to permit merge after split.
 	SplitMergeInterval typeutil.Duration `toml:"split-merge-interval,omitempty" json:"split-merge-interval"`
 	// PatrolRegionInterval is the interval for scanning region during patrol.
@@ -410,6 +415,23 @@ type ScheduleConfig struct {
 	HighSpaceRatio float64 `toml:"high-space-ratio,omitempty" json:"high-space-ratio"`
 	// DisableLearner is the option to disable using AddLearnerNode instead of AddNode
 	DisableLearner bool `toml:"disable-raft-learner" json:"disable-raft-learner,string"`
+
+	// DisableRemoveDownReplica is the option to prevent replica checker from
+	// removing down replicas.
+	DisableRemoveDownReplica bool `toml:"disable-remove-down-replica" json:"disable-remove-down-replica,string"`
+	// DisableReplaceOfflineReplica is the option to prevent replica checker from
+	// repalcing offline replicas.
+	DisableReplaceOfflineReplica bool `toml:"disable-replace-offline-replica" json:"disable-replace-offline-replica,string"`
+	// DisableMakeUpReplica is the option to prevent replica checker from making up
+	// replicas when replica count is less than expected.
+	DisableMakeUpReplica bool `toml:"disable-make-up-replica" json:"disable-make-up-replica,string"`
+	// DisableRemoveExtraReplica is the option to prevent replica checker from
+	// removing extra replicas.
+	DisableRemoveExtraReplica bool `toml:"disable-remove-extra-replica" json:"disable-remove-extra-replica,string"`
+	// DisableLocationReplacement is the option to prevent replica checker from
+	// moving replica to a better location.
+	DisableLocationReplacement bool `toml:"disable-location-replacement" json:"disable-location-replacement,string"`
+
 	// Schedulers support for loding customized schedulers
 	Schedulers SchedulerConfigs `toml:"schedulers,omitempty" json:"schedulers-v2"` // json v2 is for the sake of compatible upgrade
 }
@@ -418,22 +440,27 @@ func (c *ScheduleConfig) clone() *ScheduleConfig {
 	schedulers := make(SchedulerConfigs, len(c.Schedulers))
 	copy(schedulers, c.Schedulers)
 	return &ScheduleConfig{
-		MaxSnapshotCount:     c.MaxSnapshotCount,
-		MaxPendingPeerCount:  c.MaxPendingPeerCount,
-		MaxMergeRegionSize:   c.MaxMergeRegionSize,
-		MaxMergeRegionRows:   c.MaxMergeRegionRows,
-		SplitMergeInterval:   c.SplitMergeInterval,
-		PatrolRegionInterval: c.PatrolRegionInterval,
-		MaxStoreDownTime:     c.MaxStoreDownTime,
-		LeaderScheduleLimit:  c.LeaderScheduleLimit,
-		RegionScheduleLimit:  c.RegionScheduleLimit,
-		ReplicaScheduleLimit: c.ReplicaScheduleLimit,
-		MergeScheduleLimit:   c.MergeScheduleLimit,
-		TolerantSizeRatio:    c.TolerantSizeRatio,
-		LowSpaceRatio:        c.LowSpaceRatio,
-		HighSpaceRatio:       c.HighSpaceRatio,
-		DisableLearner:       c.DisableLearner,
-		Schedulers:           schedulers,
+		MaxSnapshotCount:             c.MaxSnapshotCount,
+		MaxPendingPeerCount:          c.MaxPendingPeerCount,
+		MaxMergeRegionSize:           c.MaxMergeRegionSize,
+		MaxMergeRegionKeys:           c.MaxMergeRegionKeys,
+		SplitMergeInterval:           c.SplitMergeInterval,
+		PatrolRegionInterval:         c.PatrolRegionInterval,
+		MaxStoreDownTime:             c.MaxStoreDownTime,
+		LeaderScheduleLimit:          c.LeaderScheduleLimit,
+		RegionScheduleLimit:          c.RegionScheduleLimit,
+		ReplicaScheduleLimit:         c.ReplicaScheduleLimit,
+		MergeScheduleLimit:           c.MergeScheduleLimit,
+		TolerantSizeRatio:            c.TolerantSizeRatio,
+		LowSpaceRatio:                c.LowSpaceRatio,
+		HighSpaceRatio:               c.HighSpaceRatio,
+		DisableLearner:               c.DisableLearner,
+		DisableRemoveDownReplica:     c.DisableRemoveDownReplica,
+		DisableReplaceOfflineReplica: c.DisableReplaceOfflineReplica,
+		DisableMakeUpReplica:         c.DisableMakeUpReplica,
+		DisableRemoveExtraReplica:    c.DisableRemoveExtraReplica,
+		DisableLocationReplacement:   c.DisableLocationReplacement,
+		Schedulers:                   schedulers,
 	}
 }
 
@@ -442,7 +469,7 @@ const (
 	defaultMaxSnapshotCount     = 3
 	defaultMaxPendingPeerCount  = 16
 	defaultMaxMergeRegionSize   = 20
-	defaultMaxMergeRegionRows   = 200000
+	defaultMaxMergeRegionKeys   = 200000
 	defaultSplitMergeInterval   = 1 * time.Hour
 	defaultPatrolRegionInterval = 100 * time.Millisecond
 	defaultMaxStoreDownTime     = 30 * time.Minute
@@ -459,7 +486,7 @@ func (c *ScheduleConfig) adjust() error {
 	adjustUint64(&c.MaxSnapshotCount, defaultMaxSnapshotCount)
 	adjustUint64(&c.MaxPendingPeerCount, defaultMaxPendingPeerCount)
 	adjustUint64(&c.MaxMergeRegionSize, defaultMaxMergeRegionSize)
-	adjustUint64(&c.MaxMergeRegionRows, defaultMaxMergeRegionRows)
+	adjustUint64(&c.MaxMergeRegionKeys, defaultMaxMergeRegionKeys)
 	adjustDuration(&c.SplitMergeInterval, defaultSplitMergeInterval)
 	adjustDuration(&c.PatrolRegionInterval, defaultPatrolRegionInterval)
 	adjustDuration(&c.MaxStoreDownTime, defaultMaxStoreDownTime)
@@ -539,8 +566,19 @@ func (c *ReplicationConfig) clone() *ReplicationConfig {
 	}
 }
 
-func (c *ReplicationConfig) adjust() {
+func (c *ReplicationConfig) validate() error {
+	for _, label := range c.LocationLabels {
+		err := ValidateLabelString(label)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *ReplicationConfig) adjust() error {
 	adjustUint64(&c.MaxReplicas, defaultMaxReplicas)
+	return c.validate()
 }
 
 // NamespaceConfig is to overwrite the global setting for specific namespace
@@ -555,16 +593,6 @@ type NamespaceConfig struct {
 	MergeScheduleLimit uint64 `json:"merge-schedule-limit"`
 	// MaxReplicas is the number of replicas for each region.
 	MaxReplicas uint64 `json:"max-replicas"`
-}
-
-func (c *NamespaceConfig) clone() *NamespaceConfig {
-	return &NamespaceConfig{
-		LeaderScheduleLimit:  c.LeaderScheduleLimit,
-		RegionScheduleLimit:  c.RegionScheduleLimit,
-		ReplicaScheduleLimit: c.ReplicaScheduleLimit,
-		MergeScheduleLimit:   c.MergeScheduleLimit,
-		MaxReplicas:          c.MaxReplicas,
-	}
 }
 
 func (c *NamespaceConfig) adjust(opt *scheduleOption) {

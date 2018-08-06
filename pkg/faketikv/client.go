@@ -119,7 +119,7 @@ func (c *client) getMembers(ctx context.Context) (*pdpb.GetMembersResponse, erro
 }
 
 func (c *client) createConn() (*grpc.ClientConn, error) {
-	cc, err := grpc.Dial(strings.TrimLeft(c.url, "http://"), grpc.WithInsecure())
+	cc, err := grpc.Dial(strings.TrimPrefix(c.url, "http://"), grpc.WithInsecure())
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -206,7 +206,7 @@ func (c *client) reportRegionHeartbeat(ctx context.Context, stream pdpb.PD_Regio
 				BytesWritten:    region.WrittenBytes,
 				BytesRead:       region.ReadBytes,
 				ApproximateSize: uint64(region.ApproximateSize),
-				ApproximateRows: uint64(region.ApproximateRows),
+				ApproximateKeys: uint64(region.ApproximateKeys),
 			}
 			err := stream.Send(request)
 			if err != nil {
@@ -246,12 +246,24 @@ func (c *client) AllocID(ctx context.Context) (uint64, error) {
 
 func (c *client) Bootstrap(ctx context.Context, store *metapb.Store, region *metapb.Region) error {
 	ctx, cancel := context.WithTimeout(ctx, pdTimeout)
-	_, err := c.pdClient().Bootstrap(ctx, &pdpb.BootstrapRequest{
+	defer cancel()
+	req := &pdpb.IsBootstrappedRequest{
+		Header: &pdpb.RequestHeader{
+			ClusterId: c.clusterID,
+		},
+	}
+	resp, err := c.pdClient().IsBootstrapped(ctx, req)
+	if resp.GetBootstrapped() {
+		simutil.Logger.Fatal("failed to bootstrap, server is not clean")
+	}
+	if err != nil {
+		return err
+	}
+	_, err = c.pdClient().Bootstrap(ctx, &pdpb.BootstrapRequest{
 		Header: c.requestHeader(),
 		Store:  store,
 		Region: region,
 	})
-	cancel()
 	if err != nil {
 		return err
 	}

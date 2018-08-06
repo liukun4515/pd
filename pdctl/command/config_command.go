@@ -26,11 +26,12 @@ import (
 
 // pd的控制相关内容
 var (
-	configPrefix        = "pd/api/v1/config"
-	schedulePrefix      = "pd/api/v1/config/schedule"
-	replicationPrefix   = "pd/api/v1/config/replicate"
-	namespacePrefix     = "pd/api/v1/config/namespace"
-	labelPropertyPrefix = "pd/api/v1/config/label-property"
+	configPrefix         = "pd/api/v1/config"
+	schedulePrefix       = "pd/api/v1/config/schedule"
+	replicationPrefix    = "pd/api/v1/config/replicate"
+	namespacePrefix      = "pd/api/v1/config/namespace"
+	labelPropertyPrefix  = "pd/api/v1/config/label-property"
+	clusterVersionPrefix = "pd/api/v1/config/cluster-version"
 )
 
 // NewConfigCommand return a config subcommand of rootCmd
@@ -56,6 +57,7 @@ func NewShowConfigCommand() *cobra.Command {
 	sc.AddCommand(NewShowNamespaceConfigCommand())
 	sc.AddCommand(NewShowReplicationConfigCommand())
 	sc.AddCommand(NewShowLabelPropertyCommand())
+	sc.AddCommand(NewShowClusterVersionCommand())
 	return sc
 }
 
@@ -99,15 +101,26 @@ func NewShowLabelPropertyCommand() *cobra.Command {
 	return sc
 }
 
+// NewShowClusterVersionCommand returns a cluster version subcommand of show subcommand.
+func NewShowClusterVersionCommand() *cobra.Command {
+	sc := &cobra.Command{
+		Use:   "cluster-version",
+		Short: "show the cluster version",
+		Run:   showClusterVersionCommandFunc,
+	}
+	return sc
+}
+
 // NewSetConfigCommand return a set subcommand of configCmd
 func NewSetConfigCommand() *cobra.Command {
 	sc := &cobra.Command{
-		Use:   "set <option> <value>, set namespace <name> <option> <value>, set label-property <type> <key> <value>",
+		Use:   "set <option> <value>, set namespace <name> <option> <value>, set label-property <type> <key> <value>, set cluster-version <version>",
 		Short: "set the option with value",
 		Run:   setConfigCommandFunc,
 	}
 	sc.AddCommand(NewSetNamespaceConfigCommand())
 	sc.AddCommand(NewSetLabelPropertyCommand())
+	sc.AddCommand(NewSetClusterVersionCommand())
 	return sc
 }
 
@@ -127,6 +140,16 @@ func NewSetLabelPropertyCommand() *cobra.Command {
 		Use:   "label-property <type> <key> <value>",
 		Short: "set a label property config item",
 		Run:   setLabelPropertyConfigCommandFunc,
+	}
+	return sc
+}
+
+// NewSetClusterVersionCommand creates a set subcommand of set subcommand
+func NewSetClusterVersionCommand() *cobra.Command {
+	sc := &cobra.Command{
+		Use:   "cluster-version <version>",
+		Short: "set cluster version",
+		Run:   setClusterVersionCommandFunc,
 	}
 	return sc
 }
@@ -212,6 +235,15 @@ func showNamespaceConfigCommandFunc(cmd *cobra.Command, args []string) {
 	fmt.Println(r)
 }
 
+func showClusterVersionCommandFunc(cmd *cobra.Command, args []string) {
+	r, err := doRequest(cmd, clusterVersionPrefix, http.MethodGet)
+	if err != nil {
+		fmt.Printf("Failed to get cluster version: %s\n", err)
+		return
+	}
+	fmt.Println(r)
+}
+
 func postConfigDataWithPath(cmd *cobra.Command, key, value, path string) error {
 	var val interface{}
 	data := make(map[string]interface{})
@@ -221,6 +253,9 @@ func postConfigDataWithPath(cmd *cobra.Command, key, value, path string) error {
 	}
 	data[key] = val
 	reqData, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
 	req, err := getRequest(cmd, path, http.MethodPost, "application/json", bytes.NewBuffer(reqData))
 	if err != nil {
 		return err
@@ -305,4 +340,15 @@ func postLabelProperty(cmd *cobra.Command, action string, args []string) {
 	}
 	prefix := path.Join(labelPropertyPrefix)
 	postJSON(cmd, prefix, input)
+}
+
+func setClusterVersionCommandFunc(cmd *cobra.Command, args []string) {
+	if len(args) != 1 {
+		fmt.Println(cmd.UsageString())
+		return
+	}
+	input := map[string]interface{}{
+		"cluster-version": args[0],
+	}
+	postJSON(cmd, clusterVersionPrefix, input)
 }

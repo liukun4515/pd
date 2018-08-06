@@ -290,6 +290,15 @@ func (c *RaftCluster) putStore(store *metapb.Store) error {
 		return errors.Errorf("invalid put store %v", store)
 	}
 
+	v, err := ParseVersion(store.GetVersion())
+	if err != nil {
+		return errors.Errorf("invalid put store %v, error: %s", store, err)
+	}
+	clusterVersion := c.cachedCluster.opt.loadClusterVersion()
+	if !IsCompatible(clusterVersion, *v) {
+		return errors.Errorf("version should compatible with version  %s, got %s", clusterVersion, v)
+	}
+
 	cluster := c.cachedCluster
 
 	// Store address can not be the same as other stores.
@@ -310,16 +319,15 @@ func (c *RaftCluster) putStore(store *metapb.Store) error {
 	} else {
 		// Update an existed store.
 		s.Address = store.Address
+		s.Version = store.Version
 		s.MergeLabels(store.Labels)
 	}
-
 	// Check location labels.
 	for _, k := range c.cachedCluster.GetLocationLabels() {
 		if v := s.GetLabelValue(k); len(v) == 0 {
 			log.Warnf("missing location label %q in store %v", k, s)
 		}
 	}
-
 	return cluster.putStore(s)
 }
 
@@ -333,7 +341,7 @@ func (c *RaftCluster) RemoveStore(storeID uint64) error {
 
 	store := cluster.GetStore(storeID)
 	if store == nil {
-		return errors.Trace(core.ErrStoreNotFound(storeID))
+		return core.NewStoreNotFoundErr(storeID)
 	}
 
 	// Remove an offline store should be OK, nothing to do.
@@ -342,7 +350,7 @@ func (c *RaftCluster) RemoveStore(storeID uint64) error {
 	}
 
 	if store.IsTombstone() {
-		return errors.New("store has been removed")
+		return core.StoreTombstonedErr{StoreID: storeID, Operation: "remove"}
 	}
 
 	store.State = metapb.StoreState_Offline
@@ -362,7 +370,7 @@ func (c *RaftCluster) BuryStore(storeID uint64, force bool) error {
 
 	store := cluster.GetStore(storeID)
 	if store == nil {
-		return errors.Trace(core.ErrStoreNotFound(storeID))
+		return core.NewStoreNotFoundErr(storeID)
 	}
 
 	// Bury a tombstone store should be OK, nothing to do.
@@ -391,7 +399,7 @@ func (c *RaftCluster) SetStoreState(storeID uint64, state metapb.StoreState) err
 
 	store := cluster.GetStore(storeID)
 	if store == nil {
-		return errors.Trace(core.ErrStoreNotFound(storeID))
+		return core.NewStoreNotFoundErr(storeID)
 	}
 
 	store.State = state
@@ -406,7 +414,7 @@ func (c *RaftCluster) SetStoreWeight(storeID uint64, leader, region float64) err
 
 	store := c.cachedCluster.GetStore(storeID)
 	if store == nil {
-		return errors.Trace(core.ErrStoreNotFound(storeID))
+		return core.NewStoreNotFoundErr(storeID)
 	}
 
 	if err := c.s.kv.SaveStoreWeight(storeID, leader, region); err != nil {
@@ -446,7 +454,7 @@ func (c *RaftCluster) checkOperators() {
 		}
 
 		if op.IsTimeout() {
-			log.Infof("[region %v] operator timeout: %s", op.RegionID, op)
+			log.Infof("[region %v] operator timeout: %s", op.RegionID(), op)
 			operatorCounter.WithLabelValues(op.Desc(), "timeout").Inc()
 			co.removeOperator(op)
 		}

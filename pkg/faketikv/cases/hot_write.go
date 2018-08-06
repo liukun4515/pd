@@ -46,13 +46,13 @@ func newHotWrite() *Conf {
 			Peers:  peers,
 			Leader: peers[0],
 			Size:   96 * mb,
-			Rows:   960000,
+			Keys:   960000,
 		})
 	}
 	conf.MaxID = id.maxID
 
 	// Events description
-	// select 5 reigons on store 1 as hot write regions.
+	// select 5 regions on store 1 as hot write regions.
 	writeFlow := make(map[uint64]int64, 5)
 	for _, r := range conf.Regions {
 		if r.Leader.GetStoreId() == 1 {

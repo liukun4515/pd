@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coreos/go-semver/semver"
 	"github.com/gogo/protobuf/proto"
 	"github.com/juju/errors"
 	"github.com/pingcap/kvproto/pkg/metapb"
@@ -76,6 +77,42 @@ func loadClusterInfo(id core.IDAllocator, kv *core.KV, opt *scheduleOption) (*cl
 	log.Infof("load %v regions cost %v", c.core.Regions.GetRegionCount(), time.Since(start))
 
 	return c, nil
+}
+
+func (c *clusterInfo) OnStoreVersionChange() {
+	var (
+		minVersion     *semver.Version
+		clusterVersion semver.Version
+	)
+
+	clusterVersion = c.opt.loadClusterVersion()
+	stores := c.GetStores()
+	for _, s := range stores {
+		if s.IsTombstone() {
+			continue
+		}
+		v := MustParseVersion(s.GetVersion())
+
+		if minVersion == nil || v.LessThan(*minVersion) {
+			minVersion = v
+		}
+	}
+	if clusterVersion.LessThan(*minVersion) {
+		c.opt.SetClusterVersion(*minVersion)
+		err := c.opt.persist(c.kv)
+		if err != nil {
+			log.Infof("persist cluster version meet error: %s", err)
+		}
+		log.Infof("cluster version changed from %s to %s", clusterVersion, minVersion)
+		CheckPDVersion(c.opt)
+	}
+}
+
+// IsFeatureSupported checks if the feature is supported by current cluster.
+func (c *clusterInfo) IsFeatureSupported(f Feature) bool {
+	clusterVersion := c.opt.loadClusterVersion()
+	minSupportVersion := MinSupportedVersion(f)
+	return !clusterVersion.LessThan(minSupportVersion)
 }
 
 func (c *clusterInfo) allocID() (uint64, error) {
@@ -269,12 +306,6 @@ func (c *clusterInfo) getRegions() []*core.RegionInfo {
 	return c.core.Regions.GetRegions()
 }
 
-func (c *clusterInfo) randomRegion(opts ...core.RegionOption) *core.RegionInfo {
-	c.RLock()
-	defer c.RUnlock()
-	return c.core.Regions.RandRegion(opts...)
-}
-
 func (c *clusterInfo) getMetaRegions() []*metapb.Region {
 	c.RLock()
 	defer c.RUnlock()
@@ -305,12 +336,6 @@ func (c *clusterInfo) getStoreRegionCount(storeID uint64) int {
 	c.RLock()
 	defer c.RUnlock()
 	return c.core.Regions.GetStoreRegionCount(storeID)
-}
-
-func (c *clusterInfo) getStoreLeaderCount(storeID uint64) int {
-	c.RLock()
-	defer c.RUnlock()
-	return c.core.Regions.GetStoreLeaderCount(storeID)
 }
 
 // RandLeaderRegion returns a random region that has leader on the store.
@@ -386,7 +411,7 @@ func (c *clusterInfo) handleStoreHeartbeat(stats *pdpb.StoreStats) error {
 	storeID := stats.GetStoreId()
 	store := c.core.Stores.GetStore(storeID)
 	if store == nil {
-		return errors.Trace(core.ErrStoreNotFound(storeID))
+		return core.NewStoreNotFoundErr(storeID)
 	}
 	store.Stats = proto.Clone(stats).(*pdpb.StoreStats)
 	store.LastHeartbeatTS = time.Now()
@@ -453,7 +478,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 		if region.ApproximateSize != origin.ApproximateSize {
 			saveCache = true
 		}
-		if region.ApproximateRows != origin.ApproximateRows {
+		if region.ApproximateKeys != origin.ApproximateKeys {
 			saveCache = true
 		}
 	}
@@ -589,8 +614,8 @@ func (c *clusterInfo) GetMaxMergeRegionSize() uint64 {
 	return c.opt.GetMaxMergeRegionSize()
 }
 
-func (c *clusterInfo) GetMaxMergeRegionRows() uint64 {
-	return c.opt.GetMaxMergeRegionRows()
+func (c *clusterInfo) GetMaxMergeRegionKeys() uint64 {
+	return c.opt.GetMaxMergeRegionKeys()
 }
 
 func (c *clusterInfo) GetSplitMergeInterval() time.Duration {
@@ -618,7 +643,30 @@ func (c *clusterInfo) GetHotRegionLowThreshold() int {
 }
 
 func (c *clusterInfo) IsRaftLearnerEnabled() bool {
+	if !c.IsFeatureSupported(RaftLearner) {
+		return false
+	}
 	return c.opt.IsRaftLearnerEnabled()
+}
+
+func (c *clusterInfo) IsRemoveDownReplicaEnabled() bool {
+	return c.opt.IsRemoveDownReplicaEnabled()
+}
+
+func (c *clusterInfo) IsReplaceOfflineReplicaEnabled() bool {
+	return c.opt.IsReplaceOfflineReplicaEnabled()
+}
+
+func (c *clusterInfo) IsMakeUpReplicaEnabled() bool {
+	return c.opt.IsMakeUpReplicaEnabled()
+}
+
+func (c *clusterInfo) IsRemoveExtraReplicaEnabled() bool {
+	return c.opt.IsRemoveExtraReplicaEnabled()
+}
+
+func (c *clusterInfo) IsLocationReplacementEnabled() bool {
+	return c.opt.IsLocationReplacementEnabled()
 }
 
 func (c *clusterInfo) CheckLabelProperty(typ string, labels []*metapb.StoreLabel) bool {

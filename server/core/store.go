@@ -14,15 +14,16 @@
 package core
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/juju/errors"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/kvproto/pkg/pdpb"
+	"github.com/pingcap/pd/pkg/error_code"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -311,20 +312,24 @@ type StoreHotRegionInfos struct {
 // StoreHotRegionsStat used to record the hot region statistics group by store
 type StoreHotRegionsStat map[uint64]*HotRegionsStat
 
-var (
-	// ErrStoreNotFound is for log of store no found
-	ErrStoreNotFound = func(storeID uint64) error {
-		return errors.Errorf("store %v not found", storeID)
-	}
-	// ErrStoreIsBlocked is for log of store is blocked
-	ErrStoreIsBlocked = func(storeID uint64) error {
-		return errors.Errorf("store %v is blocked", storeID)
-	}
-)
+type storeNotFoundErr struct {
+	storeID uint64
+}
 
-// StoresInfo is a map of storeID to StoreInfo
+func (e storeNotFoundErr) Error() string {
+	return fmt.Sprintf("store %v not found", e.storeID)
+}
+
+// NewStoreNotFoundErr is for log of store not found
+func NewStoreNotFoundErr(storeID uint64) errcode.ErrorCode {
+	return errcode.NewNotFoundErr(storeNotFoundErr{storeID})
+}
+
+// StoresInfo contains information about all stores.
 type StoresInfo struct {
-	stores map[uint64]*StoreInfo
+	stores         map[uint64]*StoreInfo
+	bytesReadRate  float64
+	bytesWriteRate float64
 }
 
 // NewStoresInfo create a StoresInfo with map of storeID to StoreInfo
@@ -345,18 +350,20 @@ func (s *StoresInfo) GetStore(storeID uint64) *StoreInfo {
 
 // SetStore set a StoreInfo with storeID
 func (s *StoresInfo) SetStore(store *StoreInfo) {
-	store.RollingStoreStats.Observe(store.Stats)
 	s.stores[store.GetId()] = store
+	store.RollingStoreStats.Observe(store.Stats)
+	s.updateTotalBytesReadRate()
+	s.updateTotalBytesWriteRate()
 }
 
 // BlockStore block a StoreInfo with storeID
 func (s *StoresInfo) BlockStore(storeID uint64) error {
 	store, ok := s.stores[storeID]
 	if !ok {
-		return ErrStoreNotFound(storeID)
+		return NewStoreNotFoundErr(storeID)
 	}
 	if store.IsBlocked() {
-		return ErrStoreIsBlocked(storeID)
+		return StoreBlockedErr{StoreID: storeID}
 	}
 	store.Block()
 	return nil
@@ -429,26 +436,34 @@ func (s *StoresInfo) SetRegionSize(storeID uint64, regionSize int64) {
 	}
 }
 
-// TotalBytesWriteRate returns the total written bytes rate of all StoreInfo.
-func (s *StoresInfo) TotalBytesWriteRate() float64 {
-	var totalWriteBytes float64
+func (s *StoresInfo) updateTotalBytesWriteRate() {
+	var totalBytesWirteRate float64
 	for _, s := range s.stores {
 		if s.IsUp() {
-			totalWriteBytes += s.RollingStoreStats.GetBytesWriteRate()
+			totalBytesWirteRate += s.RollingStoreStats.GetBytesWriteRate()
 		}
 	}
-	return totalWriteBytes
+	s.bytesWriteRate = totalBytesWirteRate
+}
+
+// TotalBytesWriteRate returns the total written bytes rate of all StoreInfo.
+func (s *StoresInfo) TotalBytesWriteRate() float64 {
+	return s.bytesWriteRate
+}
+
+func (s *StoresInfo) updateTotalBytesReadRate() {
+	var totalBytesReadRate float64
+	for _, s := range s.stores {
+		if s.IsUp() {
+			totalBytesReadRate += s.RollingStoreStats.GetBytesReadRate()
+		}
+	}
+	s.bytesReadRate = totalBytesReadRate
 }
 
 // TotalBytesReadRate returns the total read bytes rate of all StoreInfo.
 func (s *StoresInfo) TotalBytesReadRate() float64 {
-	var totalReadBytes float64
-	for _, s := range s.stores {
-		if s.IsUp() {
-			totalReadBytes += s.RollingStoreStats.GetBytesReadRate()
-		}
-	}
-	return totalReadBytes
+	return s.bytesReadRate
 }
 
 // GetStoresBytesWriteStat returns the bytes write stat of all StoreInfo.

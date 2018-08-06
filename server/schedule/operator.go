@@ -22,6 +22,7 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/pingcap/kvproto/pkg/metapb"
+	"github.com/pingcap/kvproto/pkg/pdpb"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/pingcap/pd/server/core"
@@ -191,7 +192,7 @@ func (mr MergeRegion) String() string {
 // IsFinish checks if current step is finished
 func (mr MergeRegion) IsFinish(region *core.RegionInfo) bool {
 	if mr.IsPassive {
-		return bytes.Compare(region.Region.StartKey, mr.ToRegion.StartKey) != 0 || bytes.Compare(region.Region.EndKey, mr.ToRegion.EndKey) != 0
+		return !bytes.Equal(region.Region.StartKey, mr.ToRegion.StartKey) || !bytes.Equal(region.Region.EndKey, mr.ToRegion.EndKey)
 	}
 	return false
 }
@@ -212,10 +213,11 @@ func (mr MergeRegion) Influence(opInfluence OpInfluence, region *core.RegionInfo
 // SplitRegion is an OperatorStep that splits a region.
 type SplitRegion struct {
 	StartKey, EndKey []byte
+	Policy           pdpb.CheckPolicy
 }
 
 func (sr SplitRegion) String() string {
-	return "split region"
+	return fmt.Sprintf("split region with policy %s", sr.Policy.String())
 }
 
 // IsFinish checks if current step is finished.
@@ -472,8 +474,8 @@ func CreateMergeRegionOperator(desc string, cluster Cluster, source *core.Region
 		IsPassive:  false,
 	})
 
-	op1 := NewOperator(desc, source.GetId(), source.GetRegionEpoch(), kinds|kind, steps...)
-	op2 := NewOperator(desc, target.GetId(), target.GetRegionEpoch(), kind, MergeRegion{
+	op1 := NewOperator(desc, source.GetId(), source.GetRegionEpoch(), kinds|kind|OpMerge, steps...)
+	op2 := NewOperator(desc, target.GetId(), target.GetRegionEpoch(), kind|OpMerge, MergeRegion{
 		FromRegion: source.Region,
 		ToRegion:   target.Region,
 		IsPassive:  true,

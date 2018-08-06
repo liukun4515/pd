@@ -28,10 +28,12 @@ import (
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/embed"
 	"github.com/coreos/etcd/pkg/types"
+	"github.com/coreos/go-semver/semver"
 	"github.com/juju/errors"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/kvproto/pkg/pdpb"
 	"github.com/pingcap/pd/pkg/etcdutil"
+	"github.com/pingcap/pd/pkg/logutil"
 	"github.com/pingcap/pd/server/core"
 	"github.com/pingcap/pd/server/namespace"
 	log "github.com/sirupsen/logrus"
@@ -39,7 +41,8 @@ import (
 )
 
 const (
-	etcdTimeout = time.Second * 3
+	etcdTimeout           = time.Second * 3
+	serverMetricsInterval = time.Minute
 	// pdRootPath for all pd servers.
 	pdRootPath      = "/pd"
 	pdAPIPrefix     = "/pd/"
@@ -53,7 +56,7 @@ var EnableZap = false
 type Server struct {
 	// Server state.
 	isServing int64
-	isLeader  int64
+	leader    atomic.Value
 
 	// Configs and initial fields.
 	cfg         *Config
@@ -61,17 +64,21 @@ type Server struct {
 	scheduleOpt *scheduleOption
 	handler     *Handler
 
-	leaderLoopCtx    context.Context
-	leaderLoopCancel func()
-	leaderLoopWg     sync.WaitGroup
+	serverLoopCtx    context.Context
+	serverLoopCancel func()
+	serverLoopWg     sync.WaitGroup
 
 	// Etcd and cluster informations.
-	etcd        *embed.Etcd
-	client      *clientv3.Client
-	id          uint64 // etcd server id.
-	clusterID   uint64 // pd cluster id.
-	rootPath    string
-	leaderValue string // leader value saved in etcd leader key.  Every write will use this to check leader validation.
+	etcd      *embed.Etcd
+	client    *clientv3.Client
+	id        uint64 // etcd server id.
+	clusterID uint64 // pd cluster id.
+	rootPath  string
+	member    *pdpb.Member // current PD's info.
+	// memberValue is the serialized string of `member`. It will be save in
+	// etcd leader key when the PD node is successfully elected as the leader
+	// of the cluster. Every write will use it to check leadership.
+	memberValue string
 
 	// Server services.
 	// for id allocator, we can use one allocator for
@@ -197,7 +204,7 @@ func (s *Server) startServer() error {
 	metadataGauge.WithLabelValues(fmt.Sprintf("cluster%d", s.clusterID)).Set(0)
 
 	s.rootPath = path.Join(pdRootPath, strconv.FormatUint(s.clusterID, 10))
-	s.leaderValue = s.marshalLeader()
+	s.member, s.memberValue = s.memberInfo()
 
 	s.idAlloc = &idAllocator{s: s}
 	kvBase := newEtcdKVBase(s)
@@ -238,7 +245,7 @@ func (s *Server) Close() {
 
 	log.Info("closing server")
 
-	s.stopLeaderLoop()
+	s.stopServerLoop()
 
 	if s.client != nil {
 		s.client.Close()
@@ -279,9 +286,45 @@ func (s *Server) Run(ctx context.Context) error {
 		return errors.Trace(err)
 	}
 
-	s.startLeaderLoop()
+	s.startServerLoop()
 
 	return nil
+}
+
+func (s *Server) startServerLoop() {
+	s.serverLoopCtx, s.serverLoopCancel = context.WithCancel(context.Background())
+	s.serverLoopWg.Add(3)
+	go s.leaderLoop()
+	go s.etcdLeaderLoop()
+	go s.serverMetricsLoop()
+}
+
+func (s *Server) stopServerLoop() {
+	s.serverLoopCancel()
+	s.serverLoopWg.Wait()
+}
+
+func (s *Server) serverMetricsLoop() {
+	defer logutil.LogPanic()
+	defer s.serverLoopWg.Done()
+
+	ctx, cancel := context.WithCancel(s.serverLoopCtx)
+	defer cancel()
+	for {
+		select {
+		case <-time.After(serverMetricsInterval):
+			s.collectEtcdStateMetrics()
+		case <-ctx.Done():
+			log.Info("server is closed, exit metrics loop")
+			return
+		}
+	}
+}
+
+func (s *Server) collectEtcdStateMetrics() {
+	etcdStateGauge.WithLabelValues("term").Set(float64(s.etcd.Server.Term()))
+	etcdStateGauge.WithLabelValues("appliedIndex").Set(float64(s.etcd.Server.AppliedIndex()))
+	etcdStateGauge.WithLabelValues("committedIndex").Set(float64(s.etcd.Server.CommittedIndex()))
 }
 
 func (s *Server) bootstrapCluster(req *pdpb.BootstrapRequest) (*pdpb.BootstrapResponse, error) {
@@ -423,6 +466,7 @@ func (s *Server) GetConfig() *Config {
 	}
 	cfg.Namespace = namespaces
 	cfg.LabelProperty = s.scheduleOpt.loadLabelPropertyConfig().clone()
+	cfg.ClusterVersion = s.scheduleOpt.loadClusterVersion()
 	return cfg
 }
 
@@ -456,6 +500,9 @@ func (s *Server) GetReplicationConfig() *ReplicationConfig {
 
 // SetReplicationConfig sets the replication config.
 func (s *Server) SetReplicationConfig(cfg ReplicationConfig) error {
+	if err := cfg.validate(); err != nil {
+		return errors.Trace(err)
+	}
 	old := s.scheduleOpt.rep.load()
 	s.scheduleOpt.rep.store(&cfg)
 	s.scheduleOpt.persist(s.kv)
@@ -538,6 +585,26 @@ func (s *Server) DeleteLabelProperty(typ, labelKey, labelValue string) error {
 // GetLabelProperty returns the whole label property config.
 func (s *Server) GetLabelProperty() LabelPropertyConfig {
 	return s.scheduleOpt.loadLabelPropertyConfig().clone()
+}
+
+// SetClusterVersion sets the version of cluster.
+func (s *Server) SetClusterVersion(v string) error {
+	version, err := ParseVersion(v)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	s.scheduleOpt.SetClusterVersion(*version)
+	err = s.scheduleOpt.persist(s.kv)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	log.Infof("cluster version is updated to %s", v)
+	return nil
+}
+
+// GetClusterVersion returns the version of cluster.
+func (s *Server) GetClusterVersion() semver.Version {
+	return s.scheduleOpt.loadClusterVersion()
 }
 
 // GetSecurityConfig get the security config.

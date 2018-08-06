@@ -37,6 +37,18 @@ type testStoreSuite struct {
 	stores    []*metapb.Store
 }
 
+func requestStatusBody(c *C, client *http.Client, method string, url string) (int, []byte) {
+	req, err := http.NewRequest(method, url, nil)
+	c.Assert(err, IsNil)
+	resp, err := client.Do(req)
+	c.Assert(err, IsNil)
+	body, err := ioutil.ReadAll(resp.Body)
+	c.Assert(err, IsNil)
+	err = resp.Body.Close()
+	c.Assert(err, IsNil)
+	return resp.StatusCode, body
+}
+
 func (s *testStoreSuite) SetUpSuite(c *C) {
 	s.stores = []*metapb.Store{
 		{
@@ -44,23 +56,27 @@ func (s *testStoreSuite) SetUpSuite(c *C) {
 			Id:      1,
 			Address: "tikv1",
 			State:   metapb.StoreState_Up,
+			Version: "2.0.0",
 		},
 		{
 			Id:      4,
 			Address: "tikv4",
 			State:   metapb.StoreState_Up,
+			Version: "2.0.0",
 		},
 		{
 			// metapb.StoreState_Offline == 1
 			Id:      6,
 			Address: "tikv6",
 			State:   metapb.StoreState_Offline,
+			Version: "2.0.0",
 		},
 		{
 			// metapb.StoreState_Tombstone == 2
 			Id:      7,
 			Address: "tikv7",
 			State:   metapb.StoreState_Tombstone,
+			Version: "2.0.0",
 		},
 	}
 
@@ -173,18 +189,14 @@ func (s *testStoreSuite) TestStoreDelete(c *C) {
 		},
 		{
 			id:     7,
-			status: http.StatusInternalServerError,
+			status: http.StatusGone,
 		},
 	}
 	client := newHTTPClient()
 	for _, t := range table {
-		req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/store/%d", s.urlPrefix, t.id), nil)
-		c.Assert(err, IsNil)
-		resp, err := client.Do(req)
-		ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
-		c.Assert(err, IsNil)
-		c.Assert(resp.StatusCode, Equals, t.status)
+		url := fmt.Sprintf("%s/store/%d", s.urlPrefix, t.id)
+		status, _ := requestStatusBody(c, client, http.MethodDelete, url)
+		c.Assert(status, Equals, t.status)
 	}
 }
 

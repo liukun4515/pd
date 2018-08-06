@@ -32,13 +32,14 @@ var (
 // NewStoreCommand return a store subcommand of rootCmd
 func NewStoreCommand() *cobra.Command {
 	s := &cobra.Command{
-		Use:   "store [delete|label|weight] <store_id>",
+		Use:   `store [delete|label|weight] <store_id> [--jq="<query string>"]`,
 		Short: "show the store status",
 		Run:   showStoreCommandFunc,
 	}
 	s.AddCommand(NewDeleteStoreCommand())
 	s.AddCommand(NewLabelStoreCommand())
 	s.AddCommand(NewSetStoreWeightCommand())
+	s.Flags().String("jq", "", "jq query")
 	return s
 }
 
@@ -72,8 +73,7 @@ func NewSetStoreWeightCommand() *cobra.Command {
 }
 
 func showStoreCommandFunc(cmd *cobra.Command, args []string) {
-	var prefix string
-	prefix = storesPrefix
+	prefix := storesPrefix
 	if len(args) == 1 {
 		if _, err := strconv.Atoi(args[0]); err != nil {
 			fmt.Println("store_id should be a number")
@@ -84,6 +84,10 @@ func showStoreCommandFunc(cmd *cobra.Command, args []string) {
 	r, err := doRequest(cmd, prefix, http.MethodGet)
 	if err != nil {
 		fmt.Printf("Failed to get store: %s\n", err)
+		return
+	}
+	if flag := cmd.Flag("jq"); flag != nil && flag.Value.String() != "" {
+		printWithJQFilter(r, flag.Value.String())
 		return
 	}
 	fmt.Println(r)

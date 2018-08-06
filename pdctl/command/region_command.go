@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os/exec"
 	"strconv"
 
-	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/spf13/cobra"
 )
 
@@ -36,15 +36,10 @@ var (
 	regionKeyPrefix        = "pd/api/v1/region/key"
 )
 
-type regionInfo struct {
-	Region *metapb.Region `json:"region"`
-	Leader *metapb.Peer   `json:"leader"`
-}
-
 // NewRegionCommand return a region subcommand of rootCmd
 func NewRegionCommand() *cobra.Command {
 	r := &cobra.Command{
-		Use:   "region <region_id>",
+		Use:   `region <region_id> [-jq="<query string>"]`,
 		Short: "show the region status",
 		Run:   showRegionCommandFunc,
 	}
@@ -65,13 +60,13 @@ func NewRegionCommand() *cobra.Command {
 		Run:   showRegionTopWriteCommandFunc,
 	}
 	r.AddCommand(topWrite)
+	r.Flags().String("jq", "", "jq query")
 
 	return r
 }
 
 func showRegionCommandFunc(cmd *cobra.Command, args []string) {
-	var prefix string
-	prefix = regionsPrefix
+	prefix := regionsPrefix
 	if len(args) == 1 {
 		if _, err := strconv.Atoi(args[0]); err != nil {
 			fmt.Println("region_id should be a number")
@@ -84,6 +79,11 @@ func showRegionCommandFunc(cmd *cobra.Command, args []string) {
 		fmt.Printf("Failed to get region: %s\n", err)
 		return
 	}
+	if flag := cmd.Flag("jq"); flag != nil && flag.Value.String() != "" {
+		printWithJQFilter(r, flag.Value.String())
+		return
+	}
+
 	fmt.Println(r)
 }
 
@@ -238,4 +238,26 @@ func showRegionWithSiblingCommandFunc(cmd *cobra.Command, args []string) {
 		return
 	}
 	fmt.Println(r)
+}
+
+func printWithJQFilter(data, filter string) {
+	cmd := exec.Command("jq", "-c", filter)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	go func() {
+		defer stdin.Close()
+		io.WriteString(stdin, data)
+	}()
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Println(string(out), err)
+		return
+	}
+
+	fmt.Printf("%s\n", out)
 }

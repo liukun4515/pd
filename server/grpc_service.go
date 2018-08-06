@@ -26,39 +26,29 @@ import (
 	"github.com/pingcap/pd/server/core"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 // 实现的全部都是 server的方法，或者说server是pdserver的实现
 
+//revive:disable:unused-parameter
+
 // notLeaderError is returned when current server is not the leader and not possible to process request.
 // TODO: work as proxy.
-var notLeaderError = grpc.Errorf(codes.Unavailable, "not leader")
+var notLeaderError = status.Errorf(codes.Unavailable, "not leader")
 
 // GetMembers implements gRPC PDServer.
 func (s *Server) GetMembers(context.Context, *pdpb.GetMembersRequest) (*pdpb.GetMembersResponse, error) {
 	if s.isClosed() {
-		return nil, grpc.Errorf(codes.Unknown, "server not started")
+		return nil, status.Errorf(codes.Unknown, "server not started")
 	}
 	members, err := GetMembers(s.GetClient())
 	if err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
-	}
-	for _, m := range members {
-		leaderPriority, e := s.GetMemberLeaderPriority(m.GetMemberId())
-		if e != nil {
-			return nil, grpc.Errorf(codes.Unknown, e.Error())
-		}
-		m.LeaderPriority = int32(leaderPriority)
-	}
-
-	leader, err := s.GetLeader()
-	if err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
+		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 
 	var etcdLeader *pdpb.Member
-	leadID := s.etcd.Server.Lead()
+	leadID := s.GetEtcdLeader()
 	for _, m := range members {
 		if m.MemberId == leadID {
 			etcdLeader = m
@@ -69,7 +59,7 @@ func (s *Server) GetMembers(context.Context, *pdpb.GetMembersRequest) (*pdpb.Get
 	return &pdpb.GetMembersResponse{
 		Header:     s.header(),
 		Members:    members,
-		Leader:     leader,
+		Leader:     s.GetLeader(),
 		EtcdLeader: etcdLeader,
 	}, nil
 }
@@ -90,7 +80,7 @@ func (s *Server) Tso(stream pdpb.PD_TsoServer) error {
 		count := request.GetCount()
 		ts, err := s.getRespTS(count)
 		if err != nil {
-			return grpc.Errorf(codes.Unknown, err.Error())
+			return status.Errorf(codes.Unknown, err.Error())
 		}
 		response := &pdpb.TsoResponse{
 			Header:    s.header(),
@@ -120,7 +110,7 @@ func (s *Server) Bootstrap(ctx context.Context, request *pdpb.BootstrapRequest) 
 		}, nil
 	}
 	if _, err := s.bootstrapCluster(request); err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
+		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 
 	return &pdpb.BootstrapResponse{
@@ -150,7 +140,7 @@ func (s *Server) AllocID(ctx context.Context, request *pdpb.AllocIDRequest) (*pd
 	// We can use an allocator for all types ID allocation.
 	id, err := s.idAlloc.Alloc()
 	if err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
+		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 
 	return &pdpb.AllocIDResponse{
@@ -172,7 +162,7 @@ func (s *Server) GetStore(ctx context.Context, request *pdpb.GetStoreRequest) (*
 
 	store, err := cluster.GetStore(request.GetStoreId())
 	if err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
+		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 	return &pdpb.GetStoreResponse{
 		Header: s.header(),
@@ -215,10 +205,11 @@ func (s *Server) PutStore(ctx context.Context, request *pdpb.PutStoreRequest) (*
 	}
 
 	if err := cluster.putStore(store); err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
+		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 
 	log.Infof("put store ok - %v", store)
+	cluster.cachedCluster.OnStoreVersionChange()
 
 	return &pdpb.PutStoreResponse{
 		Header: s.header(),
@@ -264,7 +255,7 @@ func (s *Server) StoreHeartbeat(ctx context.Context, request *pdpb.StoreHeartbea
 
 	err := cluster.cachedCluster.handleStoreHeartbeat(request.Stats)
 	if err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
+		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 
 	return &pdpb.StoreHeartbeatResponse{
@@ -431,7 +422,7 @@ func (s *Server) AskSplit(ctx context.Context, request *pdpb.AskSplitRequest) (*
 	}
 	split, err := cluster.handleAskSplit(req)
 	if err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
+		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 
 	return &pdpb.AskSplitResponse{
@@ -453,7 +444,7 @@ func (s *Server) ReportSplit(ctx context.Context, request *pdpb.ReportSplitReque
 	}
 	_, err := cluster.handleReportSplit(request)
 	if err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
+		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 
 	return &pdpb.ReportSplitResponse{
@@ -489,7 +480,7 @@ func (s *Server) PutClusterConfig(ctx context.Context, request *pdpb.PutClusterC
 	}
 	conf := request.GetCluster()
 	if err := cluster.putConfig(conf); err != nil {
-		return nil, grpc.Errorf(codes.Unknown, err.Error())
+		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 
 	log.Infof("put cluster config ok - %v", conf)
@@ -528,6 +519,63 @@ func (s *Server) ScatterRegion(ctx context.Context, request *pdpb.ScatterRegionR
 	}, nil
 }
 
+// GetGCSafePoint implements gRPC PDServer.
+func (s *Server) GetGCSafePoint(ctx context.Context, request *pdpb.GetGCSafePointRequest) (*pdpb.GetGCSafePointResponse, error) {
+	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	cluster := s.GetRaftCluster()
+	if cluster == nil {
+		return &pdpb.GetGCSafePointResponse{Header: s.notBootstrappedHeader()}, nil
+	}
+
+	safePoint, err := s.kv.LoadGCSafePoint()
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	return &pdpb.GetGCSafePointResponse{
+		Header:    s.header(),
+		SafePoint: safePoint,
+	}, nil
+}
+
+// UpdateGCSafePoint implements gRPC PDServer.
+func (s *Server) UpdateGCSafePoint(ctx context.Context, request *pdpb.UpdateGCSafePointRequest) (*pdpb.UpdateGCSafePointResponse, error) {
+	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	cluster := s.GetRaftCluster()
+	if cluster == nil {
+		return &pdpb.UpdateGCSafePointResponse{Header: s.notBootstrappedHeader()}, nil
+	}
+
+	oldSafePoint, err := s.kv.LoadGCSafePoint()
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	newSafePoint := request.SafePoint
+
+	// Only save the safe point if it's greater than the previous one
+	if newSafePoint > oldSafePoint {
+		if err := s.kv.SaveGCSafePoint(newSafePoint); err != nil {
+			return nil, errors.Trace(err)
+		}
+		log.Infof("updated gc safe point to %d", newSafePoint)
+	} else if newSafePoint < oldSafePoint {
+		log.Warn("trying to update gc safe point from %d to %d", oldSafePoint, newSafePoint)
+		newSafePoint = oldSafePoint
+	}
+
+	return &pdpb.UpdateGCSafePointResponse{
+		Header:       s.header(),
+		NewSafePoint: newSafePoint,
+	}, nil
+}
+
 // validateRequest checks if Server is leader and clusterID is matched.
 // TODO: Call it in gRPC intercepter.
 func (s *Server) validateRequest(header *pdpb.RequestHeader) error {
@@ -535,7 +583,7 @@ func (s *Server) validateRequest(header *pdpb.RequestHeader) error {
 		return notLeaderError
 	}
 	if header.GetClusterId() != s.clusterID {
-		return grpc.Errorf(codes.FailedPrecondition, "mismatch cluster id, need %d but got %d", s.clusterID, header.GetClusterId())
+		return status.Errorf(codes.FailedPrecondition, "mismatch cluster id, need %d but got %d", s.clusterID, header.GetClusterId())
 	}
 	return nil
 }

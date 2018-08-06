@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/clientv3"
+	"github.com/coreos/go-semver/semver"
 	"github.com/juju/errors"
 	"github.com/pingcap/kvproto/pkg/pdpb"
 	"github.com/pingcap/pd/server"
@@ -87,7 +88,7 @@ func (s *testServer) Stop() error {
 	return nil
 }
 
-func (s *testServer) Destory() error {
+func (s *testServer) Destroy() error {
 	s.Lock()
 	defer s.Unlock()
 	if s.state == Running {
@@ -114,6 +115,12 @@ func (s *testServer) GetClusterID() uint64 {
 	s.RLock()
 	defer s.RUnlock()
 	return s.server.ClusterID()
+}
+
+func (s *testServer) GetClusterVersion() semver.Version {
+	s.RLock()
+	defer s.RUnlock()
+	return s.server.GetClusterVersion()
 }
 
 func (s *testServer) GetServerID() uint64 {
@@ -242,9 +249,9 @@ func (c *testCluster) Join() (*testServer, error) {
 	return s, nil
 }
 
-func (c *testCluster) Destory() error {
+func (c *testCluster) Destroy() error {
 	for _, s := range c.servers {
-		err := s.Destory()
+		err := s.Destroy()
 		if err != nil {
 			return errors.Trace(err)
 		}
