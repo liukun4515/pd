@@ -40,9 +40,11 @@ type atomicObject struct {
 	logical  int64
 }
 
+// 存储时间的key
 func (s *Server) getTimestampPath() string {
 	return path.Join(s.rootPath, "timestamp")
 }
+
 
 func (s *Server) loadTimestamp() (time.Time, error) {
 	data, err := getValue(s.client, s.getTimestampPath())
@@ -55,6 +57,7 @@ func (s *Server) loadTimestamp() (time.Time, error) {
 	return parseTimestamp(data)
 }
 
+// 保存时间，如果时间不存在就写进去，如果存在就更新时间
 // save timestamp, if lastTs is 0, we think the timestamp doesn't exist, so create it,
 // otherwise, update it.
 func (s *Server) saveTimestamp(now time.Time) error {
@@ -74,6 +77,7 @@ func (s *Server) saveTimestamp(now time.Time) error {
 	return nil
 }
 
+// 同步时间操作
 func (s *Server) syncTimestamp() error {
 	tsoCounter.WithLabelValues("sync").Inc()
 
@@ -151,6 +155,7 @@ func (s *Server) updateTimestamp() error {
 
 const maxRetryCount = 100
 
+// 获得请求的时间、physical和logical time
 func (s *Server) getRespTS(count uint32) (pdpb.Timestamp, error) {
 	var resp pdpb.Timestamp
 	for i := 0; i < maxRetryCount; i++ {

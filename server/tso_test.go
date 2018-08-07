@@ -33,9 +33,13 @@ type testTsoSuite struct {
 }
 
 func (s *testTsoSuite) SetUpSuite(c *C) {
+	// 准备测试的server
 	s.svr, s.cleanup = mustRunTestServer(c)
+	// 获得server对应的client
 	s.client = s.svr.client
+	// 等待选举出来的leader
 	mustWaitLeader(c, []*Server{s.svr})
+	// 获得对应server的地址，用来和client通信
 	s.grpcPDClient = mustNewGrpcClient(c, s.svr.GetAddr())
 }
 
@@ -64,6 +68,7 @@ func (s *testTsoSuite) testGetTimestamp(c *C, n int) *pdpb.Timestamp {
 	return res
 }
 
+// 这个方法在这个文件中都没有被使用到
 func mustGetLeader(c *C, client *clientv3.Client, leaderPath string) *pdpb.Member {
 	for i := 0; i < 20; i++ {
 		leader, err := getLeader(client, leaderPath)
