@@ -46,6 +46,9 @@ type KV struct {
 // kv只是对外提供服务的抽象
 // 底层的kv base才是真正对数据操作的
 // 这样的做法可以把两个内容进行分离
+
+// 直接供给给外部server使用
+// KV封装了所有需要些数据的操作的内容
 func NewKV(base KVBase) *KV {
 	return &KV{
 		KVBase: base,
@@ -276,6 +279,12 @@ func (kv *KV) LoadGCSafePoint() (uint64, error) {
 	return safePoint, nil
 }
 
+
+// kv中最基本的操作
+
+// 把key，value中的数据进行序列化或者反序列
+
+// 存储到kv base中或者从kv base中读取出来
 func (kv *KV) loadProto(key string, msg proto.Message) (bool, error) {
 	value, err := kv.Load(key)
 	if err != nil {
@@ -288,6 +297,7 @@ func (kv *KV) loadProto(key string, msg proto.Message) (bool, error) {
 }
 
 // 从真正实现kv的结构总save数据，数据的内容存在在msg中
+// kv中最基本的操作，
 func (kv *KV) saveProto(key string, msg proto.Message) error {
 	value, err := proto.Marshal(msg)
 	if err != nil {

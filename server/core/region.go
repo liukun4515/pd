@@ -27,9 +27,11 @@ import (
 )
 
 // RegionOption used to select region
+// 对region的选择器
 type RegionOption func(region *RegionInfo) bool
 
 // HealthRegion checks if the region is healthy
+// 实现一个region的选择器
 func HealthRegion() RegionOption {
 	return func(region *RegionInfo) bool {
 		return len(region.DownPeers) == 0 && len(region.PendingPeers) == 0 && len(region.Learners) == 0
@@ -39,13 +41,19 @@ func HealthRegion() RegionOption {
 // RegionInfo records detail region info.
 type RegionInfo struct {
 	*metapb.Region
-	Learners        []*metapb.Peer
-	Voters          []*metapb.Peer
-	Leader          *metapb.Peer
-	DownPeers       []*pdpb.PeerStats
-	PendingPeers    []*metapb.Peer
-	WrittenBytes    uint64
-	ReadBytes       uint64
+	// 什么意思
+	Learners []*metapb.Peer
+	// 什么意思
+	Voters []*metapb.Peer
+	Leader *metapb.Peer
+	// 什么意思
+	DownPeers []*pdpb.PeerStats
+	// pending是什么所以
+	PendingPeers []*metapb.Peer
+	// 读写统计
+	WrittenBytes uint64
+	ReadBytes    uint64
+	// key和size估计统计
 	ApproximateSize int64
 	ApproximateKeys int64
 }
@@ -346,6 +354,8 @@ type HotRegionsStat struct {
 
 // regionMap wraps a map[uint64]*core.RegionInfo and supports randomly pick a region.
 type regionMap struct {
+	// random 查找一个region
+	// key是region对应的id
 	m         map[uint64]*regionEntry
 	ids       []uint64
 	totalSize int64
@@ -354,6 +364,10 @@ type regionMap struct {
 
 type regionEntry struct {
 	*RegionInfo
+	// 什么是意思
+	// pos对应的是entry在对应的map中有一个ids
+	// pos表示的是这个regioninfo对应的id所在ids的位置
+	// 这样就可以直接通过 entry获得pos，然后获得regionid，然后获得对应的region
 	pos int
 }
 
@@ -382,14 +396,19 @@ func (rm *regionMap) Get(id uint64) *RegionInfo {
 }
 
 func (rm *regionMap) Put(region *RegionInfo) {
+	// 如果region存在
 	if old, ok := rm.m[region.GetId()]; ok {
 		rm.totalSize += region.ApproximateSize - old.ApproximateSize
 		rm.totalKeys += region.ApproximateKeys - old.ApproximateKeys
 		old.RegionInfo = region
 		return
 	}
+	// 如果region不存在的情况
+	// 重新构造一个新的region
+	// 其插入的位置pos是这个map的大小
 	rm.m[region.GetId()] = &regionEntry{
 		RegionInfo: region,
+
 		pos:        len(rm.ids),
 	}
 	rm.ids = append(rm.ids, region.GetId())
@@ -428,8 +447,13 @@ func (rm *regionMap) TotalSize() int64 {
 }
 
 // RegionsInfo for export
+// regionsinfo 统计整个系统中所有的region信息的内容
 type RegionsInfo struct {
+	// 一个节点用来存储整个集群的region信息
+	// 内存中可以使用b tree存储
 	tree         *regionTree
+	// 快速的查找某个region的信息
+	// 因为提供了regionid的信息
 	regions      *regionMap            // regionID -> regionInfo
 	leaders      map[uint64]*regionMap // storeID -> regionID -> regionInfo
 	followers    map[uint64]*regionMap // storeID -> regionID -> regionInfo
@@ -657,6 +681,7 @@ func (r *RegionsInfo) GetFollower(storeID uint64, regionID uint64) *RegionInfo {
 // ScanRange scans region with start key, until number greater than limit.
 func (r *RegionsInfo) ScanRange(startKey []byte, limit int) []*RegionInfo {
 	res := make([]*RegionInfo, 0, limit)
+	// 从某个start key开始找limit个region
 	r.tree.scanRange(startKey, func(region *metapb.Region) bool {
 		res = append(res, r.GetRegion(region.GetId()))
 		return len(res) < limit
@@ -687,15 +712,22 @@ func (r *RegionsInfo) GetAverageRegionSize() int64 {
 }
 
 // RegionStats records a list of regions' statistics and distribution status.
+// 统计region的一些分布信息
 type RegionStats struct {
+	// region 个数
 	Count            int              `json:"count"`
 	EmptyCount       int              `json:"empty_count"`
 	StorageSize      int64            `json:"storage_size"`
 	StorageKeys      int64            `json:"storage_keys"`
+	// 一个store上的leader个数
 	StoreLeaderCount map[uint64]int   `json:"store_leader_count"`
+	// 一个store上的peer个数
 	StorePeerCount   map[uint64]int   `json:"store_peer_count"`
+	// leader对应的数据大小
 	StoreLeaderSize  map[uint64]int64 `json:"store_leader_size"`
+	// leader对应的key的个数
 	StoreLeaderKeys  map[uint64]int64 `json:"store_leader_keys"`
+	//
 	StorePeerSize    map[uint64]int64 `json:"store_peer_size"`
 	StorePeerKeys    map[uint64]int64 `json:"store_peer_keys"`
 }
@@ -712,6 +744,7 @@ func newRegionStats() *RegionStats {
 }
 
 // Observe adds a region's statistics into RegionStats.
+// 方法指被一个地方调用，也就是region中获得某个范围region的stats信息
 func (s *RegionStats) Observe(r *RegionInfo) {
 	s.Count++
 	if r.ApproximateSize <= EmptyRegionApproximateSize {
@@ -749,6 +782,7 @@ func (r *RegionsInfo) GetRegionStats(startKey, endKey []byte) *RegionStats {
 
 const randomRegionMaxRetry = 10
 
+// 在map中选择对应的判断条件的region信息
 func randRegion(regions *regionMap, opts ...RegionOption) *RegionInfo {
 	for i := 0; i < randomRegionMaxRetry; i++ {
 		region := regions.RandomRegion()
