@@ -24,6 +24,8 @@ type Item struct {
 }
 
 // LRU is 'Least-Recently-Used' cache.
+// LRU cache的实现
+// map+list
 type LRU struct {
 	// maxCount is the maximum number of items.
 	// 0 means no limit.

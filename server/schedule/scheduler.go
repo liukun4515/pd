@@ -24,6 +24,7 @@ import (
 )
 
 // Cluster provides an overview of a cluster's regions distribution.
+// 获得集群的一些访问信息
 type Cluster interface {
 	RandFollowerRegion(storeID uint64, opts ...core.RegionOption) *core.RegionInfo
 	RandLeaderRegion(storeID uint64, opts ...core.RegionOption) *core.RegionInfo

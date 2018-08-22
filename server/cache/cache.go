@@ -36,6 +36,7 @@ type Cache interface {
 // Type is cache's type such as LRUCache and etc.
 type Type int
 
+// cache的类型，一种是LRU，一种是two queue
 const (
 	// LRUCache is for LRU cache
 	LRUCache Type = 1
@@ -48,6 +49,7 @@ var (
 	DefaultCacheType = LRUCache
 )
 
+// 对具体实现cache方法的一个封装
 type threadSafeCache struct {
 	cache Cache
 	lock  sync.RWMutex

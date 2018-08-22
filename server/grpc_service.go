@@ -270,6 +270,7 @@ var errSendRegionHeartbeatTimeout = errors.New("send region heartbeat timeout")
 // heartbeatServer wraps PD_RegionHeartbeatServer to ensure when any error
 // occurs on Send() or Recv(), both endpoints will be closed.
 // 定义一个stream的 heart beast服务
+// 封装了一个对应的心跳信息的服务接口
 type heartbeatServer struct {
 	stream pdpb.PD_RegionHeartbeatServer
 	closed int32
@@ -306,6 +307,8 @@ func (s *heartbeatServer) Recv() (*pdpb.RegionHeartbeatRequest, error) {
 }
 
 // RegionHeartbeat implements gRPC PDServer.
+// 处理对应region的心跳信息
+// 处理心跳的server
 func (s *Server) RegionHeartbeat(stream pdpb.PD_RegionHeartbeatServer) error {
 	server := &heartbeatServer{stream: stream}
 	cluster := s.GetRaftCluster()
@@ -318,7 +321,9 @@ func (s *Server) RegionHeartbeat(stream pdpb.PD_RegionHeartbeatServer) error {
 	}
 
 	var lastBind time.Time
+	// 处理心跳信息
 	for {
+		// 接收到一个request
 		request, err := server.Recv()
 		if err == io.EOF {
 			return nil
@@ -326,37 +331,43 @@ func (s *Server) RegionHeartbeat(stream pdpb.PD_RegionHeartbeatServer) error {
 		if err != nil {
 			return errors.Trace(err)
 		}
-
+		// 检查request正确性
 		if err = s.validateRequest(request.GetHeader()); err != nil {
 			return errors.Trace(err)
 		}
-
+		// 获得store节点的id信息
 		storeID := request.GetLeader().GetStoreId()
 		storeLabel := strconv.FormatUint(storeID, 10)
-
+		// metric采集这些信息
 		regionHeartbeatCounter.WithLabelValues(storeLabel, "report", "recv").Inc()
 		regionHeartbeatLatency.WithLabelValues(storeLabel).Observe(float64(time.Now().Unix()) - float64(request.GetInterval().GetEndTimestamp()))
-
+		// 获取对应的发送stream请求的结构体
 		hbStreams := cluster.coordinator.hbStreams
 
+		// 如果bind已经过时
 		if time.Since(lastBind) > s.cfg.heartbeatStreamBindInterval.Duration {
 			regionHeartbeatCounter.WithLabelValues(storeLabel, "report", "bind").Inc()
+			// 需要把对应storeid绑定
 			hbStreams.bindStream(storeID, server)
 			lastBind = time.Now()
 		}
-
+		// 获得对应请求的region信息
 		region := core.RegionFromHeartbeat(request)
+		// 处理region结构体的特殊内容
+		// id不对
 		if region.GetId() == 0 {
 			msg := fmt.Sprintf("invalid request region, %v", request)
 			hbStreams.sendErr(region, pdpb.ErrorType_UNKNOWN, msg, storeLabel)
 			continue
 		}
+		// leader不对
 		if region.Leader == nil {
 			msg := fmt.Sprintf("invalid request leader, %v", request)
 			hbStreams.sendErr(region, pdpb.ErrorType_UNKNOWN, msg, storeLabel)
 			continue
 		}
-
+		// 交给raft cluster处理region信息
+		// 具体处理一个region的逻辑内容
 		err = cluster.HandleRegionHeartbeat(region)
 		if err != nil {
 			msg := errors.Trace(err).Error()

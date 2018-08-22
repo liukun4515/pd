@@ -26,6 +26,7 @@ import (
 )
 
 // scheduleOption is a wrapper to access the configuration safely.
+// 原子性的访问conf 内容
 type scheduleOption struct {
 	v              atomic.Value
 	rep            *Replication
@@ -384,6 +385,7 @@ func (r *Replication) GetLocationLabels() []string {
 }
 
 // namespaceOption is a wrapper to access the configuration safely.
+// 访问conf信息的helper
 type namespaceOption struct {
 	namespaceCfg atomic.Value
 }

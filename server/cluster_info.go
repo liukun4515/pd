@@ -30,14 +30,18 @@ import (
 
 type clusterInfo struct {
 	sync.RWMutex
+	// 核心的内容管理结构
 	core *schedule.BasicCluster
 
-	id              core.IDAllocator
-	kv              *core.KV
-	meta            *metapb.Cluster
-	activeRegions   int
-	opt             *scheduleOption
-	regionStats     *regionStatistics
+	id core.IDAllocator
+	// 磁盘管理结果
+	kv            *core.KV
+	meta          *metapb.Cluster
+	activeRegions int
+	opt           *scheduleOption
+	// 两个统计变量是干什么的？
+	regionStats *regionStatistics
+	// 两个统计变量是干什么的？
 	labelLevelStats *labelLevelStatistics
 }
 
@@ -52,6 +56,7 @@ func newClusterInfo(id core.IDAllocator, opt *scheduleOption, kv *core.KV) *clus
 }
 
 // Return nil if cluster is not bootstrapped.
+// 从kv从load所有的信息都clusterinfo中
 func loadClusterInfo(id core.IDAllocator, kv *core.KV, opt *scheduleOption) (*clusterInfo, error) {
 	c := newClusterInfo(id, opt, kv)
 
@@ -429,10 +434,14 @@ func (c *clusterInfo) updateStoreStatusLocked(id uint64) {
 }
 
 // handleRegionHeartbeat updates the region information.
+// 处理一个region的心跳信息
 func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 	region = region.Clone()
 	c.RLock()
+	// 通过region id来查找region
+	// region生成以后region就不会发生变化
 	origin := c.core.Regions.GetRegion(region.GetId())
+	// 统计当前region是否有写入或者读操作，用来以后更新hotregion
 	isWriteUpdate, writeItem := c.core.CheckWriteStatus(region)
 	isReadUpdate, readItem := c.core.CheckReadStatus(region)
 	c.RUnlock()
@@ -440,7 +449,14 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 	// Save to KV if meta is updated.
 	// Save to cache if meta or leader is updated, or contains any down/pending peer.
 	// Mark isNew if the region in cache does not have leader.
+	// 是否存在kv中
+	// 是否存到cache中
+	// 是否是new
+
+	// 新生成的region，region版本发生变化，region peer发生变化都需要save 到 kv中
+	// 几乎所有的操作都需要修改cache，除非region没有发生任何的变化
 	var saveKV, saveCache, isNew bool
+	// 表示原来的region不存在
 	if origin == nil {
 		log.Infof("[region %d] Insert new region {%v}", region.GetId(), region)
 		saveKV, saveCache, isNew = true, true, true
@@ -448,19 +464,24 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 		r := region.GetRegionEpoch()
 		o := origin.GetRegionEpoch()
 		// Region meta is stale, return an error.
+		// 比较新region和old region的版本信息
 		if r.GetVersion() < o.GetVersion() || r.GetConfVer() < o.GetConfVer() {
 			return errors.Trace(ErrRegionIsStale(region.Region, origin.Region))
 		}
+		// region版本发生了变化
 		if r.GetVersion() > o.GetVersion() {
 			log.Infof("[region %d] %s, Version changed from {%d} to {%d}", region.GetId(), core.DiffRegionKeyInfo(origin, region), o.GetVersion(), r.GetVersion())
 			saveKV, saveCache = true, true
 		}
+		// region版本发生了变化
 		if r.GetConfVer() > o.GetConfVer() {
 			log.Infof("[region %d] %s, ConfVer changed from {%d} to {%d}", region.GetId(), core.DiffRegionPeersInfo(origin, region), o.GetConfVer(), r.GetConfVer())
 			saveKV, saveCache = true, true
 		}
+		// leader发生了变化
 		if region.Leader.GetId() != origin.Leader.GetId() {
 			log.Infof("[region %d] Leader changed from {%v} to {%v}", region.GetId(), origin.GetPeer(origin.Leader.GetId()), region.GetPeer(region.Leader.GetId()))
+			// 如果leader不存在表示 0没有leader
 			if origin.Leader.GetId() == 0 {
 				isNew = true
 			}
@@ -501,9 +522,13 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 	}
 
 	if saveCache {
+		// 如果cache需要更新
 		overlaps := c.core.Regions.SetRegion(region)
+		// 找到overflap的region
 		if c.kv != nil {
 			for _, item := range overlaps {
+				// 在kv中删除这些region
+				// 删除的region是根据id删除的
 				if err := c.kv.DeleteRegion(item); err != nil {
 					log.Errorf("[region %d] fail to delete region %v: %v", item.GetId(), item, err)
 				}
@@ -519,10 +544,12 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 		// Update related stores.
 		if origin != nil {
 			for _, p := range origin.Peers {
+				// 更新一些统计信息
 				c.updateStoreStatusLocked(p.GetStoreId())
 			}
 		}
 		for _, p := range region.Peers {
+			// 更新一些统计信息
 			c.updateStoreStatusLocked(p.GetStoreId())
 		}
 	}

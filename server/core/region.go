@@ -357,6 +357,10 @@ type regionMap struct {
 	// random 查找一个region
 	// key是region对应的id
 	m         map[uint64]*regionEntry
+	// ？？？忘记了什么意思
+	// ids表示的是region对应的id信息
+
+	// 搞这个的唯一目的就是为了random get region来使用
 	ids       []uint64
 	totalSize int64
 	totalKeys int64
@@ -368,6 +372,8 @@ type regionEntry struct {
 	// pos对应的是entry在对应的map中有一个ids
 	// pos表示的是这个regioninfo对应的id所在ids的位置
 	// 这样就可以直接通过 entry获得pos，然后获得regionid，然后获得对应的region
+
+	// pos表示的是这个region的id所在的ids的位置
 	pos int
 }
 
@@ -420,6 +426,7 @@ func (rm *regionMap) RandomRegion() *RegionInfo {
 	if rm.Len() == 0 {
 		return nil
 	}
+	// 随机的获得一个region
 	return rm.Get(rm.ids[rand.Intn(rm.Len())])
 }
 
@@ -428,6 +435,17 @@ func (rm *regionMap) Delete(id uint64) {
 		return
 	}
 	if old, ok := rm.m[id]; ok {
+		// 删除map中的任意一个region
+		// 不仅要在map中删除
+		// 还要是ids中删除
+		// 但是ids中记录的ids是按照region加入的顺序记录的
+
+		// 快速查找可以使用region entry的方式
+		// 但是删除一个ids中间会有空缺，
+		// 可以把需要删除的id对应的内容与ids的最后一个元素进行一个交换
+		// 记得修改最后一个ids中对应的region entry信息
+		// 这样就可以非常快速的添加和删除
+
 		len := rm.Len()
 		last := rm.m[rm.ids[len-1]]
 		last.pos = old.pos
@@ -451,10 +469,17 @@ func (rm *regionMap) TotalSize() int64 {
 type RegionsInfo struct {
 	// 一个节点用来存储整个集群的region信息
 	// 内存中可以使用b tree存储
+
+	// 按照key的查找方式
 	tree         *regionTree
 	// 快速的查找某个region的信息
 	// 因为提供了regionid的信息
+	// 提供了id就能找到对应的reigon
+	// 按照id的查找方式
 	regions      *regionMap            // regionID -> regionInfo
+
+	// 表示在某个store上是leader的region信息
+	// 某个store上可能有多个region，通过hash查找
 	leaders      map[uint64]*regionMap // storeID -> regionID -> regionInfo
 	followers    map[uint64]*regionMap // storeID -> regionID -> regionInfo
 	learners     map[uint64]*regionMap // storeID -> regionID -> regionInfo
@@ -713,6 +738,7 @@ func (r *RegionsInfo) GetAverageRegionSize() int64 {
 
 // RegionStats records a list of regions' statistics and distribution status.
 // 统计region的一些分布信息
+// 想要获得region的统计信息
 type RegionStats struct {
 	// region 个数
 	Count            int              `json:"count"`

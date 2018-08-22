@@ -32,6 +32,7 @@ const (
 
 // HotSpotCache is a cache hold hot regions.
 type HotSpotCache struct {
+	// 实现的cache
 	writeFlow cache.Cache
 	readFlow  cache.Cache
 }
@@ -64,6 +65,7 @@ func (w *HotSpotCache) CheckWrite(region *core.RegionInfo, stores *core.StoresIn
 		}
 	}
 
+	// 计算threshold
 	hotRegionThreshold := calculateWriteHotThreshold(stores)
 	return w.isNeedUpdateStatCache(region, WrittenBytesPerSec, hotRegionThreshold, value, WriteFlow)
 }
@@ -153,7 +155,7 @@ func (w *HotSpotCache) isNeedUpdateStatCache(region *core.RegionInfo, flowBytes 
 		newItem.Stats.Add(float64(flowBytes))
 		return true, newItem
 	}
-	// smaller than hotReionThreshold
+	// smaller than hotRegionThreshold
 	if oldItem == nil {
 		return false, newItem
 	}
@@ -227,6 +229,7 @@ func (w *HotSpotCache) CollectMetrics(stores *core.StoresInfo) {
 
 func (w *HotSpotCache) isRegionHot(id uint64, hotThreshold int) bool {
 	if stat, ok := w.writeFlow.Peek(id); ok {
+		// hot成都
 		if stat.(*core.RegionStat).HotDegree >= hotThreshold {
 			return true
 		}

@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	// HotRegionLowThreshold is the low threadshold of hot region
+	// HotRegionLowThreshold is the low threshold of hot region
 	HotRegionLowThreshold = 3
 )
 
@@ -37,8 +37,12 @@ const (
 
 // BasicCluster provides basic data member and interface for a tikv cluster.
 type BasicCluster struct {
+	// 基本store信息结构体
 	Stores   *core.StoresInfo
+	// 基本region信息结构体
 	Regions  *core.RegionsInfo
+	// 管理hot 读写问题
+	// hot cache结构体
 	HotCache *HotSpotCache
 }
 

@@ -29,6 +29,7 @@ import (
 
 // StoreInfo contains information about a store.
 type StoreInfo struct {
+	//  一个store的很多信息
 	*metapb.Store
 	Stats *pdpb.StoreStats
 	// Blocked means that the store is blocked from balance.
@@ -38,6 +39,7 @@ type StoreInfo struct {
 	LeaderSize        int64
 	RegionSize        int64
 	PendingPeerCount  int
+	// 记录上次收到心跳的时间
 	LastHeartbeatTS   time.Time
 	LeaderWeight      float64
 	RegionWeight      float64
@@ -326,7 +328,10 @@ func NewStoreNotFoundErr(storeID uint64) errcode.ErrorCode {
 }
 
 // StoresInfo contains information about all stores.
+// 统计所有的tikv store节点的信息
 type StoresInfo struct {
+	// store信息
+	// 一个store对应一个id
 	stores         map[uint64]*StoreInfo
 	bytesReadRate  float64
 	bytesWriteRate float64
@@ -352,6 +357,7 @@ func (s *StoresInfo) GetStore(storeID uint64) *StoreInfo {
 func (s *StoresInfo) SetStore(store *StoreInfo) {
 	s.stores[store.GetId()] = store
 	store.RollingStoreStats.Observe(store.Stats)
+	// 每次set store的时候就会更新
 	s.updateTotalBytesReadRate()
 	s.updateTotalBytesWriteRate()
 }
@@ -437,9 +443,12 @@ func (s *StoresInfo) SetRegionSize(storeID uint64, regionSize int64) {
 }
 
 func (s *StoresInfo) updateTotalBytesWriteRate() {
+	// 跟新store的写速率
 	var totalBytesWirteRate float64
 	for _, s := range s.stores {
 		if s.IsUp() {
+			// 更新哪些up的节点
+			// 每一个store都有一个统计信息
 			totalBytesWirteRate += s.RollingStoreStats.GetBytesWriteRate()
 		}
 	}
@@ -455,9 +464,11 @@ func (s *StoresInfo) updateTotalBytesReadRate() {
 	var totalBytesReadRate float64
 	for _, s := range s.stores {
 		if s.IsUp() {
+			// 更新全部节点的read速率
 			totalBytesReadRate += s.RollingStoreStats.GetBytesReadRate()
 		}
 	}
+	// 调用以后会被更新一下
 	s.bytesReadRate = totalBytesReadRate
 }
 
@@ -503,6 +514,7 @@ func (s *StoresInfo) GetStoresKeysReadStat() map[uint64]uint64 {
 }
 
 // RollingStoreStats are multiple sets of recent historical records with specified windows size.
+// 对历史的store的读写进行统计
 type RollingStoreStats struct {
 	sync.RWMutex
 	bytesWriteRate *RollingStats

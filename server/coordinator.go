@@ -48,6 +48,8 @@ var (
 	errSchedulerNotFound = errors.New("scheduler not found")
 )
 
+// 对外进行提供operation的发送服务的协调器方法
+// run表示一种不停的服务
 type coordinator struct {
 	sync.RWMutex
 
@@ -61,10 +63,12 @@ type coordinator struct {
 	regionScatterer  *schedule.RegionScatterer
 	namespaceChecker *schedule.NamespaceChecker
 	mergeChecker     *schedule.MergeChecker
+	// key对应的是regionid
 	operators        map[uint64]*schedule.Operator
 	schedulers       map[string]*scheduleController
 	classifier       namespace.Classifier
 	histories        *list.List
+	// 用来向其他节点发送heartbeat请求信息
 	hbStreams        *heartbeatStreams
 }
 
@@ -87,15 +91,19 @@ func newCoordinator(cluster *clusterInfo, hbStreams *heartbeatStreams, classifie
 	}
 }
 
+// 调用者用来处理region信息的方法
 func (c *coordinator) dispatch(region *core.RegionInfo) {
 	// Check existed operator.
 	if op := c.getOperator(region.GetId()); op != nil {
+		// 判断对于已经缓存的这个region的operator的内容
 		timeout := op.IsTimeout()
 		if step := op.Check(region); step != nil && !timeout {
 			operatorCounter.WithLabelValues(op.Desc(), "check").Inc()
+			// 超越对应region的next step
 			c.sendScheduleCommand(region, step)
 			return
 		}
+		// op操作已经结束
 		if op.IsFinish() {
 			log.Infof("[region %v] operator finish: %s", region.GetId(), op)
 			operatorCounter.WithLabelValues(op.Desc(), "finish").Inc()
@@ -103,6 +111,7 @@ func (c *coordinator) dispatch(region *core.RegionInfo) {
 			c.pushHistory(op)
 			c.removeOperator(op)
 		} else if timeout {
+			// 对于这个region的operation的处理超时了
 			log.Infof("[region %v] operator timeout: %s", region.GetId(), op)
 			operatorCounter.WithLabelValues(op.Desc(), "timeout").Inc()
 			c.removeOperator(op)
@@ -110,6 +119,10 @@ func (c *coordinator) dispatch(region *core.RegionInfo) {
 	}
 }
 
+// 处理的主要逻辑
+// 通过select channel等实现
+// 所有的private方法基本都是为这个方法进行服务的
+// coordinator总的处理逻辑
 func (c *coordinator) patrolRegions() {
 	defer logutil.LogPanic()
 
@@ -122,12 +135,13 @@ func (c *coordinator) patrolRegions() {
 	var key []byte
 	for {
 		select {
+		// 到一定时间以后，触发
 		case <-timer.C:
 			timer.Reset(c.cluster.GetPatrolRegionInterval())
 		case <-c.ctx.Done():
 			return
 		}
-
+		// scan regions
 		regions := c.cluster.ScanRegions(key, patrolScanRegionLimit)
 		if len(regions) == 0 {
 			// reset scan key.
@@ -142,7 +156,7 @@ func (c *coordinator) patrolRegions() {
 			}
 
 			key = region.GetEndKey()
-
+			// check region的含义是什么呢？
 			if c.checkRegion(region) {
 				break
 			}
@@ -196,6 +210,8 @@ func (c *coordinator) checkRegion(region *core.RegionInfo) bool {
 	return false
 }
 
+// run是直接调度并行处理region的方法
+// load一些scheduler等信息
 func (c *coordinator) run() {
 	ticker := time.NewTicker(runSchedulerCheckInterval)
 	defer ticker.Stop()
@@ -247,6 +263,7 @@ func (c *coordinator) run() {
 	}
 
 	c.wg.Add(1)
+	// 并发的控制region
 	go c.patrolRegions()
 }
 
@@ -371,6 +388,7 @@ func (c *coordinator) shouldRun() bool {
 	return c.cluster.isPrepared()
 }
 
+// 添加一个对应的scheduler的内容
 func (c *coordinator) addScheduler(scheduler schedule.Scheduler, args ...string) error {
 	c.Lock()
 	defer c.Unlock()
@@ -383,7 +401,8 @@ func (c *coordinator) addScheduler(scheduler schedule.Scheduler, args ...string)
 	if err := s.Prepare(c.cluster); err != nil {
 		return errors.Trace(err)
 	}
-
+	// 每次添加一个scheduler，wg就增加1
+	// 并且每一个scheduler是并发执行的
 	c.wg.Add(1)
 	go c.runScheduler(s)
 	c.schedulers[s.GetName()] = s
@@ -411,6 +430,7 @@ func (c *coordinator) removeScheduler(name string) error {
 	return nil
 }
 
+// 一个go rountine任务长期的进行
 func (c *coordinator) runScheduler(s *scheduleController) {
 	defer logutil.LogPanic()
 	defer c.wg.Done()
@@ -566,6 +586,9 @@ func (c *coordinator) getHistory(start time.Time) []schedule.OperatorHistory {
 	return histories
 }
 
+// 向某个region发送调度请求信息
+// 调度请求是通过heartbeat发送的
+// 对对应的region发送调度操作请求
 func (c *coordinator) sendScheduleCommand(region *core.RegionInfo, step schedule.OperatorStep) {
 	log.Infof("[region %v] send schedule command: %s", region.GetId(), step)
 	switch s := step.(type) {
@@ -649,6 +672,7 @@ func (c *coordinator) sendScheduleCommand(region *core.RegionInfo, step schedule
 	}
 }
 
+// 在加一些控制内容
 type scheduleController struct {
 	schedule.Scheduler
 	cluster      *clusterInfo

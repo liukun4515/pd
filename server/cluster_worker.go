@@ -25,6 +25,8 @@ import (
 )
 
 // HandleRegionHeartbeat processes RegionInfo reports from client.
+// 处理心跳信息
+// 集群接收到region信息以后交给coordinator处理
 func (c *RaftCluster) HandleRegionHeartbeat(region *core.RegionInfo) error {
 	if err := c.cachedCluster.handleRegionHeartbeat(region); err != nil {
 		return errors.Trace(err)
@@ -35,7 +37,7 @@ func (c *RaftCluster) HandleRegionHeartbeat(region *core.RegionInfo) error {
 		log.Warnf("invalid region, zero region peer count - %v", region)
 		return errors.Errorf("invalid region, zero region peer count - %v", region)
 	}
-
+	// 最终交给coordinator处理异步处理
 	c.coordinator.dispatch(region)
 	return nil
 }
@@ -45,6 +47,7 @@ func (c *RaftCluster) handleAskSplit(request *pdpb.AskSplitRequest) (*pdpb.AskSp
 	startKey := reqRegion.GetStartKey()
 	region, _ := c.GetRegionByKey(startKey)
 
+	// check the region exist or not.
 	// If the request epoch is less than current region epoch, then returns an error.
 	reqRegionEpoch := reqRegion.GetRegionEpoch()
 	regionEpoch := region.GetRegionEpoch()
@@ -68,7 +71,7 @@ func (c *RaftCluster) handleAskSplit(request *pdpb.AskSplitRequest) (*pdpb.AskSp
 	// Disable merge for the 2 regions in a period of time.
 	c.coordinator.mergeChecker.RecordRegionSplit(reqRegion.GetId())
 	c.coordinator.mergeChecker.RecordRegionSplit(newRegionID)
-
+	// 分配的新的region信息
 	split := &pdpb.AskSplitResponse{
 		NewRegionId: newRegionID,
 		NewPeerIds:  peerIDs,

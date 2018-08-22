@@ -205,10 +205,12 @@ func (s *Server) startServer() error {
 
 	s.rootPath = path.Join(pdRootPath, strconv.FormatUint(s.clusterID, 10))
 	s.member, s.memberValue = s.memberInfo()
-
+	// 选择id
 	s.idAlloc = &idAllocator{s: s}
+	// etcd的server
 	kvBase := newEtcdKVBase(s)
 	s.kv = core.NewKV(kvBase)
+	// etcd的client
 	s.cluster = newRaftCluster(s, s.clusterID)
 	s.hbStreams = newHeartbeatStreams(s.clusterID)
 	if s.classifier, err = namespace.CreateClassifier(s.cfg.NamespaceClassifier, s.kv, s.idAlloc); err != nil {
@@ -270,6 +272,7 @@ func (s *Server) isClosed() bool {
 var timeMonitorOnce sync.Once
 
 // Run runs the pd server.
+//
 func (s *Server) Run(ctx context.Context) error {
 	timeMonitorOnce.Do(func() {
 		go StartMonitor(time.Now, func() {
@@ -277,15 +280,18 @@ func (s *Server) Run(ctx context.Context) error {
 			timeJumpBackCounter.Inc()
 		})
 	})
-
+	// 启动etcd server
+	// 内容复杂可以，仔细查看
 	if err := s.startEtcd(ctx); err != nil {
 		return errors.Trace(err)
 	}
-
+	// 启动一些基本信息和初始化一些内容
+	// 内容复杂，可以仔细查看
 	if err := s.startServer(); err != nil {
 		return errors.Trace(err)
 	}
-
+	// server的 loop服务
+	// pd server一定需要的服务
 	s.startServerLoop()
 
 	return nil
@@ -294,8 +300,11 @@ func (s *Server) Run(ctx context.Context) error {
 func (s *Server) startServerLoop() {
 	s.serverLoopCtx, s.serverLoopCancel = context.WithCancel(context.Background())
 	s.serverLoopWg.Add(3)
+	// PD的leader
 	go s.leaderLoop()
+	// etcd的leader的loop
 	go s.etcdLeaderLoop()
+	// 统计信息的loop
 	go s.serverMetricsLoop()
 }
 

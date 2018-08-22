@@ -24,6 +24,8 @@ import (
 var Simulating bool
 
 // Options for schedulers.
+// option的一些interface
+// 其实就是一些check或者get信息
 type Options interface {
 	GetLeaderScheduleLimit() uint64
 	GetRegionScheduleLimit() uint64

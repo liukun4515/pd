@@ -51,7 +51,7 @@ type RaftCluster struct {
 
 	// cached cluster info
 	cachedCluster *clusterInfo
-
+	// coordinator
 	coordinator *coordinator
 
 	wg   sync.WaitGroup
@@ -87,6 +87,10 @@ func (c *RaftCluster) loadClusterStatus() (*ClusterStatus, error) {
 	return &ClusterStatus{RaftBootstrapTime: t}, nil
 }
 
+// 启动cluster中的服务
+// 1. 从kv中load cluster信息
+// 2. 初始化coordinator
+// 3. 启动后台任务
 func (c *RaftCluster) start() error {
 	c.Lock()
 	defer c.Unlock()
@@ -96,6 +100,7 @@ func (c *RaftCluster) start() error {
 		return nil
 	}
 
+	// load集群的信息都cluster info中
 	cluster, err := loadClusterInfo(c.s.idAlloc, c.s.kv, c.s.scheduleOpt)
 	if err != nil {
 		return errors.Trace(err)
@@ -109,6 +114,9 @@ func (c *RaftCluster) start() error {
 	c.quit = make(chan struct{})
 
 	c.wg.Add(2)
+	// 后台运行的任务
+	// 1.coordinator任务
+	// 2.后台任务
 	go c.runCoordinator()
 	go c.runBackgroundJobs(backgroundJobInterval)
 
@@ -120,6 +128,7 @@ func (c *RaftCluster) start() error {
 func (c *RaftCluster) runCoordinator() {
 	defer logutil.LogPanic()
 
+	// 运行coordinator，同步任务
 	c.coordinator.run()
 	c.wg.Done()
 }
@@ -424,6 +433,7 @@ func (c *RaftCluster) SetStoreWeight(storeID uint64, leader, region float64) err
 	store.LeaderWeight, store.RegionWeight = leader, region
 	return c.cachedCluster.putStore(store)
 }
+
 
 func (c *RaftCluster) checkStores() {
 	cluster := c.cachedCluster

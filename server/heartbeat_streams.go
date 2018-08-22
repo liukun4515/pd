@@ -27,6 +27,7 @@ import (
 
 const heartbeatStreamKeepAliveInterval = time.Minute
 
+// 发送心跳返回信息
 type heartbeatStream interface {
 	Send(*pdpb.RegionHeartbeatResponse) error
 }
@@ -41,11 +42,13 @@ type heartbeatStreams struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	clusterID uint64
+	// 针对某个store信息
 	streams   map[uint64]heartbeatStream
 	msgCh     chan *pdpb.RegionHeartbeatResponse
 	streamCh  chan streamUpdate
 }
 
+// 构造好一个heartbaet stream的时候就需要一直run
 func newHeartbeatStreams(clusterID uint64) *heartbeatStreams {
 	ctx, cancel := context.WithCancel(context.Background())
 	hs := &heartbeatStreams{
@@ -61,11 +64,13 @@ func newHeartbeatStreams(clusterID uint64) *heartbeatStreams {
 	return hs
 }
 
+// heartbeat不停的处理心跳信息，从队列中不停的处理心跳信息的发送
 func (s *heartbeatStreams) run() {
 	defer logutil.LogPanic()
 
 	defer s.wg.Done()
 
+	// 分钟级别的keep alive
 	keepAliveTicker := time.NewTicker(heartbeatStreamKeepAliveInterval)
 	defer keepAliveTicker.Stop()
 
@@ -73,11 +78,16 @@ func (s *heartbeatStreams) run() {
 
 	for {
 		select {
+		// 获得stream的更新，然后存储下来
+		// 不考虑并发的问题
 		case update := <-s.streamCh:
 			s.streams[update.storeID] = update.stream
+		// 有新的需要发送出去的message
 		case msg := <-s.msgCh:
 			storeID := msg.GetTargetPeer().GetStoreId()
 			storeLabel := strconv.FormatUint(storeID, 10)
+			// 找到对应的stream
+			// stream发送到对应的message
 			if stream, ok := s.streams[storeID]; ok {
 				if err := stream.Send(msg); err != nil {
 					log.Errorf("[region %v] send heartbeat message fail: %v", msg.RegionId, err)
@@ -91,6 +101,7 @@ func (s *heartbeatStreams) run() {
 				regionHeartbeatCounter.WithLabelValues(storeLabel, "push", "skip").Inc()
 			}
 		case <-keepAliveTicker.C:
+			// 给所有的stream对应的节点发送alive信息
 			for storeID, stream := range s.streams {
 				storeLabel := strconv.FormatUint(storeID, 10)
 				if err := stream.Send(keepAlive); err != nil {
@@ -112,12 +123,15 @@ func (s *heartbeatStreams) Close() {
 	s.wg.Wait()
 }
 
+// 对某个tikv store，绑定对应的stream
 func (s *heartbeatStreams) bindStream(storeID uint64, stream heartbeatStream) {
 	update := streamUpdate{
 		storeID: storeID,
 		stream:  stream,
 	}
+	// 每一个store会对应一个stream
 	select {
+	// 所有的跟新操作都放在这里处理
 	case s.streamCh <- update:
 	case <-s.ctx.Done():
 	}
@@ -134,6 +148,7 @@ func (s *heartbeatStreams) sendMsg(region *core.RegionInfo, msg *pdpb.RegionHear
 	msg.TargetPeer = region.Leader
 
 	select {
+	// message发送给channel即可
 	case s.msgCh <- msg:
 	case <-s.ctx.Done():
 	}

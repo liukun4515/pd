@@ -35,6 +35,7 @@ type TTL struct {
 }
 
 // NewTTL returns a new TTL cache.
+// 指定GC的时间间隔以及每一个kv的ttl
 func NewTTL(gcInterval time.Duration, ttl time.Duration) *TTL {
 	c := &TTL{
 		items:      make(map[uint64]ttlCacheItem),
@@ -62,7 +63,7 @@ func (c *TTL) PutWithTTL(key uint64, value interface{}, ttl time.Duration) {
 	}
 }
 
-// Get retrives an item from cache.
+// Get retrieves an item from cache.
 func (c *TTL) Get(key uint64) (interface{}, bool) {
 	c.RLock()
 	defer c.RUnlock()
@@ -129,11 +130,13 @@ func (c *TTL) doGC() {
 }
 
 // TTLUint64 is simple TTL saves only uint64s.
+// only save the unit64
 type TTLUint64 struct {
 	*TTL
 }
 
 // NewIDTTL creates a new TTLUint64 cache.
+// 定一个一个id的TTL
 func NewIDTTL(gcInterval, ttl time.Duration) *TTLUint64 {
 	return &TTLUint64{
 		TTL: NewTTL(gcInterval, ttl),

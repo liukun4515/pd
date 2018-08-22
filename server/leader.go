@@ -75,19 +75,23 @@ func (s *Server) leaderLoop() {
 	defer s.serverLoopWg.Done()
 
 	for {
+		// server没有被关闭
 		if s.isClosed() {
 			log.Infof("server is closed, return leader loop")
 			return
 		}
-
+		// etcd集群没有挂掉或者可以拿到etcd的leader
+		// 停止，然后等待
 		if s.GetEtcdLeader() == 0 {
 			log.Error("no etcd leader, check leader later")
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
-
+		// 获得leader，这个leader是PD的leader
+		// 通过使用etcd的client
 		leader, err := getLeader(s.client, s.getLeaderPath())
 		if err != nil {
+			// 获取失败就等待
 			log.Errorf("get leader err %v", err)
 			time.Sleep(200 * time.Millisecond)
 			continue
