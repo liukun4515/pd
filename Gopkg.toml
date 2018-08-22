@@ -26,7 +26,8 @@
 
 [[constraint]]
   name = "github.com/pingcap/kvproto"
-  branch = "master"
+  source = "https://github.com/liukun4515/kvproto.git"
+  branch = "update_tipb_latest_glide"
 
 [[constraint]]
   name = "github.com/google/btree"
