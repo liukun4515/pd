@@ -66,6 +66,7 @@ func (s *Server) GetMembers(context.Context, *pdpb.GetMembersRequest) (*pdpb.Get
 
 // Tso implements gRPC PDServer.
 func (s *Server) Tso(stream pdpb.PD_TsoServer) error {
+	// 请求id的服务
 	for {
 		request, err := stream.Recv()
 		if err == io.EOF {

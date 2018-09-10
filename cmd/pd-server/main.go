@@ -35,6 +35,7 @@ import (
 )
 
 func main() {
+	// 配置信息
 	cfg := server.NewConfig()
 	err := cfg.Parse(os.Args[1:])
 
@@ -68,6 +69,7 @@ func main() {
 	// 这个是干什么的？？
 	grpc_prometheus.EnableHandlingTimeHistogram()
 	// 普罗米修斯数据采集
+	// 启动后台
 	metricutil.Push(&cfg.Metric)
 
 	err = server.PrepareJoinCluster(cfg)
@@ -79,7 +81,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("create server failed: %v", errors.ErrorStack(err))
 	}
-
+	// 使用svr初始化http
 	if err = server.InitHTTPClient(svr); err != nil {
 		log.Fatalf("initial http client for api handler failed: %v", errors.ErrorStack(err))
 	}
@@ -98,14 +100,13 @@ func main() {
 		cancel()
 	}()
 	// 启动server
-	// 主要的server的逻辑
 	if err := svr.Run(ctx); err != nil {
 		log.Fatalf("run server failed: %v", errors.ErrorStack(err))
 	}
 	// ctx被取消了
 	<-ctx.Done()
 	log.Infof("Got signal [%d] to exit.", sig)
-
+	// 关闭server
 	svr.Close()
 	switch sig {
 	case syscall.SIGTERM:

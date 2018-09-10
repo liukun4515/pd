@@ -29,7 +29,7 @@ type idAllocator struct {
 	mu   sync.Mutex
 	base uint64
 	end  uint64
-
+	// 作为一个transaction kv使用
 	s *Server
 }
 
@@ -66,7 +66,7 @@ func (alloc *idAllocator) generate() (uint64, error) {
 		cmp clientv3.Cmp
 		end uint64
 	)
-
+	// 对etcd中allocid的key的value进行一个更新
 	if value == nil {
 		// create the key
 		cmp = clientv3.Compare(clientv3.CreateRevision(key), "=", 0)
